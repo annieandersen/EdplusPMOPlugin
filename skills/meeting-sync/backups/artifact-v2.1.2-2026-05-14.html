@@ -1,0 +1,3858 @@
+<!DOCTYPE html><script type="application/json" id="cowork-artifact-meta">
+{
+  "name": "Meeting Sync",
+  "schemaVersion": 1,
+  "description": "Meeting Sync Dashboard — fetches Granola meetings from the last week, cross-references JIRA board SPLT, generates AI proposals for ticket updates, new tickets, and Slack summaries, with interactive review and submit.",
+  "mcpTools": [
+    "mcp__Granola__list_meetings",
+    "mcp__Granola__get_meetings",
+    "mcp__Zapier__jira_software_cloud_find_issues_via_jql",
+    "mcp__Zapier__jira_software_cloud_add_comment_to_issue",
+    "mcp__Zapier__jira_software_cloud_create_issue",
+    "mcp__Zapier__jira_software_cloud_find_project",
+    "mcp__Slack__slack_send_message",
+    "mcp__Slack__slack_search_channels",
+    "mcp__cowork__update_artifact",
+    "mcp__cowork__read_widget_context"
+  ],
+  "mcpServerNames": [
+    "Granola",
+    "Granola",
+    "Zapier",
+    "Zapier",
+    "Zapier",
+    "Zapier",
+    "Slack",
+    "Slack",
+    "cowork",
+    "cowork"
+  ]
+}
+</script>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meeting Sync Dashboard</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --accent: #6366f1;
+      --accent-2: #8b5cf6;
+      --accent-deep: #4f46e5;
+      --accent-light: #eef2ff;
+      --accent-soft: #f5f3ff;
+      --gradient-accent: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+      --gradient-accent-soft: linear-gradient(135deg, #eef2ff 0%, #f5f3ff 50%, #fdf2f8 100%);
+      --gradient-header: linear-gradient(180deg, rgba(238, 242, 255, 0.85) 0%, rgba(245, 243, 255, 0.55) 55%, rgba(250, 250, 254, 0) 100%);
+      --bg: #fafafe;
+      --bg-elevated: #ffffff;
+      --surface: #ffffff;
+      --surface-glass: rgba(255, 255, 255, 0.72);
+      --text-primary: #0b1020;
+      --text-secondary: #475569;
+      --text-tertiary: #6b7280;
+      --green: #059669;
+      --green-light: #ecfdf5;
+      --red: #dc2626;
+      --red-light: #fee2e2;
+      --orange: #d97706;
+      --orange-light: #fef3c7;
+      --yellow: #eab308;
+      --yellow-light: #fef9e7;
+      --gray-50: #fafafa;
+      --gray-100: #f4f4f7;
+      --gray-200: #e5e7ec;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --border: 1px solid #e5e7ec;
+      --border-strong: 1px solid #d1d5db;
+      --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+      --shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.06), 0 2px 4px -1px rgba(15, 23, 42, 0.04);
+      --shadow-lg: 0 20px 40px -8px rgba(99, 102, 241, 0.15), 0 8px 16px -4px rgba(15, 23, 42, 0.06);
+      --shadow-glow: 0 0 0 1px rgba(99, 102, 241, 0.08), 0 8px 24px -4px rgba(99, 102, 241, 0.18);
+      --radius-sm: 6px;
+      --radius: 10px;
+      --radius-lg: 14px;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.06) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(236, 72, 153, 0.04) 0px, transparent 60%);
+      background-attachment: fixed;
+      color: var(--text-primary);
+      line-height: 1.5;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Loading Screen — playful, lightweight */
+    #loadingContainer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Floating orbs in the background */
+    #loadingContainer::before,
+    #loadingContainer::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(60px);
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    #loadingContainer::before {
+      width: 320px; height: 320px;
+      background: radial-gradient(circle, #818cf8 0%, transparent 70%);
+      top: -10%; left: 10%;
+      animation: float-a 8s ease-in-out infinite;
+    }
+    #loadingContainer::after {
+      width: 280px; height: 280px;
+      background: radial-gradient(circle, #f472b6 0%, transparent 70%);
+      bottom: -10%; right: 10%;
+      animation: float-b 10s ease-in-out infinite;
+    }
+
+    @keyframes float-a {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(30px, 40px) scale(1.1); }
+    }
+    @keyframes float-b {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(-40px, -30px) scale(1.05); }
+    }
+
+    .loading-card {
+      position: relative;
+      z-index: 1;
+      background: var(--surface-glass);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      border-radius: 24px;
+      padding: 3rem 2.75rem 2.5rem;
+      width: 380px;
+      max-width: calc(100% - 2rem);
+      box-shadow: var(--shadow-lg);
+      text-align: center;
+    }
+
+    /* Animated logo: three orbs that orbit and merge */
+    .loading-logo {
+      width: 80px; height: 80px;
+      margin: 0 auto 1.5rem;
+      position: relative;
+    }
+    .loading-orb {
+      position: absolute;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      top: 26px; left: 26px;
+      mix-blend-mode: multiply;
+      animation: orbit 2.4s var(--ease-out) infinite;
+    }
+    .loading-orb:nth-child(1) {
+      background: radial-gradient(circle at 30% 30%, #a5b4fc, #6366f1);
+      animation-delay: 0s;
+    }
+    .loading-orb:nth-child(2) {
+      background: radial-gradient(circle at 30% 30%, #c4b5fd, #8b5cf6);
+      animation-delay: -0.8s;
+    }
+    .loading-orb:nth-child(3) {
+      background: radial-gradient(circle at 30% 30%, #f9a8d4, #ec4899);
+      animation-delay: -1.6s;
+    }
+
+    @keyframes orbit {
+      0%   { transform: translate(0, 0) scale(1); }
+      33%  { transform: translate(20px, -18px) scale(1.1); }
+      66%  { transform: translate(-20px, -18px) scale(0.9); }
+      100% { transform: translate(0, 0) scale(1); }
+    }
+
+    .loading-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.375rem;
+      letter-spacing: -0.02em;
+      background: var(--gradient-accent);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .loading-tagline {
+      font-size: 0.875rem;
+      color: var(--text-tertiary);
+      margin-bottom: 2rem;
+    }
+
+    .loading-phases {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      text-align: left;
+    }
+
+    .loading-phase {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.625rem 0.875rem;
+      border-radius: 10px;
+      background: rgba(244, 244, 247, 0.5);
+      font-size: 0.875rem;
+      color: var(--text-tertiary);
+      transition: all 0.4s var(--ease-out);
+      border: 1px solid transparent;
+    }
+
+    .loading-phase.active {
+      background: rgba(238, 242, 255, 0.85);
+      border-color: rgba(99, 102, 241, 0.2);
+      color: var(--accent-deep);
+      font-weight: 500;
+      transform: translateX(2px);
+    }
+
+    .loading-phase.done {
+      color: var(--green);
+      background: rgba(236, 253, 245, 0.6);
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--gray-200);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    .loading-phase.done .loading-spinner {
+      border: none; width: 16px; height: 16px; animation: none;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--green); color: white;
+      font-size: 0.65rem; font-weight: 700;
+    }
+    .loading-phase.done .loading-spinner::before { content: "\2713"; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Selection Container */
+    #selectionContainer {
+      display: none;
+      flex-direction: column;
+      height: 100vh;
+      background: var(--bg);
+    }
+
+    /* Header */
+    .dashboard-header {
+      background: var(--surface-glass);
+      backdrop-filter: blur(12px) saturate(180%);
+      -webkit-backdrop-filter: blur(12px) saturate(180%);
+      border-bottom: 1px solid rgba(229, 231, 236, 0.6);
+      padding: 1.25rem 2rem;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    /* Analysis-page header gets a soft gradient that melts into content */
+    .dashboard-header.dashboard-header-gradient {
+      background: var(--gradient-header);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-bottom: none;
+      padding-bottom: 1.75rem;
+    }
+
+    .header-content { max-width: 1400px; margin: 0 auto; }
+
+    .header-title {
+      font-size: 1.625rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      letter-spacing: -0.025em;
+      background: var(--gradient-accent);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-subtitle { font-size: 0.875rem; color: var(--text-tertiary); font-weight: 500; }
+
+    .header-subtitle-with-link {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.875rem;
+      color: var(--text-tertiary);
+      font-weight: 500;
+    }
+
+    .back-link {
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .back-link:hover { color: var(--accent-deep); transform: translateX(-2px); }
+
+    /* Selection Content */
+    .selection-content { flex: 1; overflow-y: auto; padding: 2rem; }
+    .selection-wrapper { max-width: 1400px; margin: 0 auto; }
+
+    .selection-section {
+      background: var(--surface);
+      border: var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.75rem;
+      margin-bottom: 1.25rem;
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow 0.2s var(--ease-out);
+    }
+    .selection-section:hover { box-shadow: var(--shadow); }
+
+    .selection-section-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-tertiary);
+      margin-bottom: 1.25rem;
+    }
+
+    .selection-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .selection-section-header .selection-section-title { margin-bottom: 0; }
+
+    /* Collapsible prompt editor — matches selection-section look */
+    .prompt-section { padding: 0; overflow: hidden; }
+    .prompt-toggle {
+      width: 100%; display: flex; align-items: center; justify-content: space-between;
+      gap: 0.75rem; padding: 1.1rem 1.75rem;
+      background: transparent; border: none; cursor: pointer;
+      font-family: inherit; text-align: left;
+    }
+    .prompt-toggle:hover { background: var(--gray-50); }
+    .prompt-toggle-label {
+      display: flex; flex-direction: column; gap: 0.2rem;
+    }
+    .prompt-toggle-label .selection-section-title { margin-bottom: 0; }
+    .prompt-toggle-hint { font-size: 0.8rem; color: var(--text-tertiary); font-weight: 500; text-transform: none; letter-spacing: normal; }
+    .prompt-toggle-chev {
+      width: 1rem; height: 1rem; flex-shrink: 0;
+      color: var(--text-tertiary);
+      transition: transform 0.2s var(--ease-out);
+    }
+    .prompt-section.open .prompt-toggle-chev { transform: rotate(180deg); }
+    .prompt-body { display: none; padding: 0 1.75rem 1.5rem; }
+    .prompt-section.open .prompt-body { display: block; }
+    .prompt-body .form-textarea { min-height: 120px; }
+    .prompt-body-actions {
+      display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem;
+    }
+    .prompt-body-footnote { font-size: 0.75rem; color: var(--text-tertiary); margin-top: 0.5rem; }
+
+    /* Time Range Pills — compact for inline use */
+    .time-range-controls {
+      display: inline-flex; gap: 0.25rem;
+      padding: 0.25rem;
+      background: var(--gray-100);
+      border-radius: 999px;
+      flex-wrap: wrap;
+    }
+
+    .time-range-pill {
+      padding: 0.4rem 0.875rem;
+      border: none;
+      background: transparent;
+      color: var(--text-tertiary);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 999px;
+      transition: all 0.2s var(--ease-out);
+      white-space: nowrap;
+    }
+    .time-range-pill:hover { color: var(--text-primary); }
+    .time-range-pill.active {
+      background: var(--surface);
+      color: var(--accent-deep);
+      box-shadow: var(--shadow-sm);
+      font-weight: 600;
+    }
+
+    /* Board Picker */
+    .board-controls { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; align-items: center; }
+
+    .board-pill {
+      padding: 0.625rem 1rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--gray-200);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s var(--ease-out);
+      display: inline-flex;
+      flex-direction: column;
+      gap: 0.125rem;
+      text-align: left;
+    }
+    .board-pill:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+    .board-pill.active {
+      background: var(--gradient-accent-soft);
+      border-color: var(--accent);
+      color: var(--accent-deep);
+      box-shadow: var(--shadow-glow);
+    }
+    .board-pill-name { font-weight: 600; font-size: 0.875rem; }
+    .board-pill-key {
+      font-size: 0.6875rem; color: var(--text-tertiary);
+      font-family: -apple-system, BlinkMacSystemFont, 'Menlo', 'Monaco', monospace;
+      letter-spacing: 0.5px;
+    }
+    .board-pill.active .board-pill-key { color: var(--accent); opacity: 0.85; }
+
+    .board-search-container { display: none; margin-top: 0.75rem; }
+    .board-search-container.visible { display: block; }
+    .board-search-row { display: flex; gap: 0.5rem; }
+    .board-search-input { flex: 1; }
+    .board-result-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .board-result-item:hover { background: var(--gray-100); }
+    .board-result-name { font-weight: 500; }
+    .board-result-key { color: var(--text-tertiary); font-size: 0.8rem; }
+
+    /* Meeting Cards in Selection */
+    .meeting-cards { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0; }
+
+    .meeting-card {
+      display: flex;
+      align-items: center;
+      gap: 0.875rem;
+      padding: 0.875rem 1rem;
+      background: var(--surface);
+      border: var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.2s var(--ease-out);
+    }
+    .meeting-card:hover {
+      border-color: var(--accent);
+      box-shadow: var(--shadow-glow);
+      transform: translateY(-1px);
+    }
+
+    .meeting-card input[type="checkbox"] {
+      width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); flex-shrink: 0;
+    }
+
+    .meeting-card-content { flex: 1; min-width: 0; }
+    .meeting-card-title {
+      font-size: 0.9375rem; font-weight: 600; color: var(--text-primary);
+      margin-bottom: 0.125rem; letter-spacing: -0.01em;
+    }
+    .meeting-card-meta {
+      display: flex; gap: 0.625rem; font-size: 0.8125rem; color: var(--text-tertiary);
+      align-items: center;
+    }
+    .meeting-card-meta > span:not(:last-child)::after {
+      content: '\2022'; margin-left: 0.625rem; color: var(--gray-300);
+    }
+
+    /* Select All Toggle */
+    .select-all-section {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.625rem 1rem;
+      background: transparent;
+      border: none;
+      border-radius: var(--radius);
+      margin-bottom: 0.625rem;
+    }
+    .select-all-section input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+    .select-all-section label {
+      cursor: pointer; font-weight: 500; color: var(--text-secondary);
+      font-size: 0.8125rem;
+    }
+
+    /* Selection Footer */
+    .selection-footer {
+      background: var(--surface-glass);
+      backdrop-filter: blur(12px) saturate(180%);
+      -webkit-backdrop-filter: blur(12px) saturate(180%);
+      border-top: 1px solid rgba(229, 231, 236, 0.6);
+      padding: 1.125rem 2rem;
+      position: sticky;
+      bottom: 0;
+      z-index: 10;
+    }
+
+    .selection-footer-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+    }
+
+    .selection-count { font-size: 0.875rem; color: var(--text-tertiary); font-weight: 500; }
+    .selection-count-num {
+      font-weight: 700; color: var(--accent-deep);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Analysis Loading State — full-screen, center-aligned, reuses orb animation */
+    #analysisLoadingOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      background-image:
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.07) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(236, 72, 153, 0.05) 0px, transparent 60%);
+      overflow: hidden;
+    }
+    #analysisLoadingOverlay.visible { display: flex; }
+    #analysisLoadingOverlay::before,
+    #analysisLoadingOverlay::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(60px);
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    #analysisLoadingOverlay::before {
+      width: 320px; height: 320px;
+      background: radial-gradient(circle, #818cf8 0%, transparent 70%);
+      top: -10%; left: 10%;
+      animation: float-a 8s ease-in-out infinite;
+    }
+    #analysisLoadingOverlay::after {
+      width: 280px; height: 280px;
+      background: radial-gradient(circle, #f472b6 0%, transparent 70%);
+      bottom: -10%; right: 10%;
+      animation: float-b 10s ease-in-out infinite;
+    }
+
+    .mini-spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(99, 102, 241, 0.25);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* Main Container */
+    #mainContainer { display: none; flex-direction: column; height: 100vh; }
+
+    /* Link toast — Cowork blocks window.open, so clicked links copy to clipboard. */
+    .link-toast {
+      position: fixed;
+      bottom: 1.5rem; left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      padding: 0.75rem 1.125rem;
+      border-radius: 10px;
+      background: #0b1020;
+      color: #ffffff;
+      font-size: 0.875rem; font-weight: 500;
+      box-shadow: 0 12px 32px -6px rgba(15, 23, 42, 0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s var(--ease-out), transform 0.18s var(--ease-out);
+      z-index: 100;
+      max-width: 420px;
+      text-align: center;
+      line-height: 1.4;
+    }
+    .link-toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .link-toast a {
+      color: #a5b4fc;
+      text-decoration: underline;
+      font-family: -apple-system, BlinkMacSystemFont, 'Menlo', 'Monaco', monospace;
+      font-size: 0.8125rem;
+    }
+
+    /* Recap screen — shown after Submit to JIRA completes */
+    #recapContainer {
+      display: none;
+      flex-direction: column;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    .recap-wrapper {
+      max-width: 780px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 4rem 2rem 3rem;
+    }
+    .recap-hero {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .recap-checkmark {
+      width: 64px; height: 64px;
+      margin: 0 auto 1.25rem;
+      border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--gradient-accent);
+      color: white;
+      box-shadow: var(--shadow-lg);
+    }
+    .recap-checkmark svg { width: 32px; height: 32px; }
+    .recap-title {
+      font-size: 1.875rem; font-weight: 700;
+      letter-spacing: -0.025em;
+      background: var(--gradient-accent);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.375rem;
+    }
+    .recap-subtitle {
+      font-size: 0.95rem; color: var(--text-tertiary); font-weight: 500;
+    }
+
+    .recap-section {
+      background: var(--surface);
+      border: var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.125rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .recap-section-header {
+      display: flex; align-items: center; gap: 0.625rem;
+      margin-bottom: 1rem;
+    }
+    .recap-section-title {
+      font-size: 1rem; font-weight: 600; color: var(--text-primary);
+    }
+    .recap-section-count {
+      font-size: 0.75rem; font-weight: 600;
+      padding: 0.15rem 0.5rem; border-radius: 999px;
+      background: var(--accent-light); color: var(--accent-deep);
+    }
+    .recap-section.failures .recap-section-count {
+      background: var(--red-light); color: var(--red);
+    }
+
+    .recap-item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.875rem;
+      padding: 0.75rem 0;
+      border-top: 1px solid var(--gray-100);
+    }
+    .recap-item:first-child { border-top: none; padding-top: 0; }
+    .recap-item-main { flex: 1; min-width: 0; }
+    .recap-item-title {
+      font-size: 0.9375rem; font-weight: 500; color: var(--text-primary);
+      margin-bottom: 0.2rem; line-height: 1.4;
+    }
+    .recap-item-meta {
+      display: flex; flex-wrap: wrap; gap: 0.5rem;
+      font-size: 0.8125rem; color: var(--text-tertiary);
+    }
+    .recap-item-meta .meta-divider { color: var(--gray-300); }
+    .recap-item-link {
+      flex-shrink: 0;
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      padding: 0.35rem 0.7rem;
+      border-radius: 6px;
+      background: var(--accent-light);
+      color: var(--accent-deep);
+      font-size: 0.8125rem; font-weight: 600;
+      text-decoration: none;
+      font-family: -apple-system, BlinkMacSystemFont, 'Menlo', 'Monaco', monospace;
+      letter-spacing: 0.3px;
+      transition: all 0.15s ease;
+    }
+    .recap-item-link:hover { background: var(--accent); color: white; transform: translateY(-1px); }
+    .recap-item-link.no-key {
+      background: var(--gray-100); color: var(--text-tertiary);
+      cursor: default;
+    }
+    .recap-item-link.no-key:hover { background: var(--gray-100); color: var(--text-tertiary); transform: none; }
+
+    .recap-failure-error {
+      font-size: 0.8125rem; color: var(--red);
+      margin-top: 0.2rem;
+      font-family: -apple-system, BlinkMacSystemFont, 'Menlo', 'Monaco', monospace;
+    }
+
+    .recap-actions {
+      display: flex; justify-content: center; gap: 0.75rem;
+      margin-top: 2rem;
+    }
+
+    /* Content */
+    .dashboard-content { flex: 1; overflow-y: auto; padding: 2rem; }
+    .content-wrapper { max-width: 1400px; margin: 0 auto; }
+
+    /* Meeting Tabs */
+    .meeting-tabs {
+      display: flex; gap: 0.25rem; margin-bottom: 1.75rem;
+      overflow-x: auto;
+      padding: 0.25rem;
+      background: var(--gray-100);
+      border-radius: var(--radius);
+      width: fit-content;
+      max-width: 100%;
+    }
+    .meeting-tabs::-webkit-scrollbar { height: 0; }
+
+    .meeting-tab {
+      padding: 0.5rem 1rem;
+      border: none; background: transparent;
+      color: var(--text-tertiary);
+      font-size: 0.875rem; font-weight: 500;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s var(--ease-out);
+      white-space: nowrap;
+    }
+    .meeting-tab:hover { color: var(--text-primary); }
+    .meeting-tab.active {
+      color: var(--accent-deep);
+      background: var(--surface);
+      box-shadow: var(--shadow-sm);
+      font-weight: 600;
+    }
+
+    /* Meeting Content */
+    .meeting-content { display: none; }
+    .meeting-content.active { display: block; animation: fadeIn 0.2s ease; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Section */
+    .section { margin-bottom: 1.75rem; }
+    .section-header {
+      display: flex; align-items: center; gap: 0.625rem;
+      margin-bottom: 1rem; cursor: pointer; user-select: none;
+      padding: 0.25rem 0;
+    }
+    .section-header:hover .section-title { color: var(--accent-deep); }
+    .section-title {
+      font-size: 1.0625rem; font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.015em;
+      transition: color 0.15s ease;
+    }
+    .section-toggle {
+      display: flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; color: var(--text-tertiary);
+      font-size: 0.7rem; transition: transform 0.2s var(--ease-out);
+    }
+    .section.collapsed .section-toggle { transform: rotate(-90deg); }
+    .section-body { max-height: 10000px; overflow: hidden; transition: max-height 0.3s var(--ease-out); }
+    .section.collapsed .section-body { max-height: 0; }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 0.875rem;
+      box-shadow: var(--shadow-sm);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .card:hover { border-color: var(--gray-300); box-shadow: var(--shadow); }
+
+    /* New header layout: title row spans full width, toggle pinned top-right */
+    .card-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1rem; margin-bottom: 0.5rem;
+    }
+    .card-header-main { flex: 1; min-width: 0; }
+
+    .card-title-row {
+      display: flex; align-items: baseline; gap: 0.625rem; flex-wrap: wrap;
+      margin-bottom: 0.375rem;
+    }
+    .card-title-link {
+      font-size: 1.0625rem; font-weight: 600;
+      color: var(--text-primary); text-decoration: none;
+      line-height: 1.35;
+    }
+    .card-title-link:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+    .card-meta-row {
+      display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+      font-size: 0.8125rem; color: var(--text-tertiary);
+    }
+    .card-meta-row .meta-label { font-weight: 500; color: var(--text-tertiary); }
+    .card-meta-row .meta-divider { color: var(--gray-300); }
+
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 0.2rem 0.55rem;
+      border-radius: 5px;
+      font-size: 0.7rem; font-weight: 600; letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+    .badge-ticket {
+      background: var(--accent-light); color: var(--accent);
+      cursor: pointer; text-decoration: none; transition: opacity 0.15s ease;
+      font-family: -apple-system, BlinkMacSystemFont, 'Menlo', 'Monaco', monospace;
+      letter-spacing: 0.3px;
+    }
+    .badge-ticket:hover { opacity: 0.8; }
+    .badge-status { background: var(--gray-100); color: var(--text-secondary); }
+    .badge-status.in-progress { background: #dbeafe; color: #0369a1; }
+    .badge-status.done { background: var(--green-light); color: var(--green); }
+    .badge-status.todo { background: var(--orange-light); color: var(--orange); }
+
+    .assignee-chip {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      font-size: 0.8125rem; color: var(--text-secondary); font-weight: 500;
+    }
+    .assignee-chip::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--gray-400);
+    }
+
+    /* Compact corner toggle — label visually hidden, toggle pinned far-right */
+    .card-toggle {
+      display: flex; align-items: center;
+      flex-shrink: 0; padding-top: 0.125rem;
+      margin-left: auto;
+    }
+    .card-toggle .toggle-label {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0);
+      white-space: nowrap; border: 0;
+    }
+
+    /* Labels: single-row chips with inline "+" add button + dropdown */
+    .label-picker {
+      position: relative;
+      display: flex; flex-direction: column; gap: 0.5rem;
+    }
+    .label-chips {
+      display: flex; flex-wrap: wrap; gap: 0.375rem;
+      min-height: 2.25rem; padding: 0.4rem 0.5rem;
+      border: var(--border); border-radius: 6px; background: var(--surface);
+      align-items: center;
+    }
+    .label-chip {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.2rem 0.5rem 0.2rem 0.625rem;
+      background: var(--accent-light); color: var(--accent);
+      border-radius: 4px; font-size: 0.8125rem; font-weight: 500;
+    }
+    .label-chip-remove {
+      cursor: pointer; opacity: 0.6; font-size: 1rem; line-height: 1;
+      padding: 0 0.15rem; transition: opacity 0.15s;
+    }
+    .label-chip-remove:hover { opacity: 1; }
+    .label-chips-empty { font-size: 0.85rem; color: var(--text-tertiary); padding: 0 0.25rem; }
+
+    .label-add-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 1.5rem; height: 1.5rem; padding: 0;
+      border: 1px dashed var(--gray-300); background: var(--surface);
+      color: var(--text-tertiary); border-radius: 4px;
+      cursor: pointer; font-size: 0.95rem; line-height: 1;
+      transition: all 0.15s ease;
+      margin-left: auto;
+    }
+    .label-add-btn:hover { border-color: var(--accent); color: var(--accent); border-style: solid; }
+    .label-add-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-light); border-style: solid; }
+
+    .label-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 0.25rem);
+      right: 0;
+      z-index: 30;
+      width: min(280px, 100%);
+      max-height: 240px; overflow-y: auto;
+      background: var(--surface);
+      border: var(--border); border-radius: 8px;
+      box-shadow: var(--shadow-lg);
+      padding: 0.5rem;
+    }
+    .label-dropdown.visible { display: block; }
+    .label-dropdown-empty {
+      padding: 0.5rem 0.625rem;
+      font-size: 0.8125rem; color: var(--text-tertiary);
+    }
+    .label-dropdown-option {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.4rem 0.625rem;
+      font-size: 0.85rem; color: var(--text-secondary);
+      border-radius: 4px; cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .label-dropdown-option:hover { background: var(--gray-100); color: var(--text-primary); }
+    .label-dropdown-option.selected {
+      color: var(--accent); background: var(--accent-light);
+    }
+    .label-dropdown-divider {
+      height: 1px; background: var(--gray-200);
+      margin: 0.375rem 0.25rem;
+    }
+    .label-dropdown-custom {
+      display: flex; gap: 0.375rem;
+      padding: 0.25rem;
+    }
+    .label-dropdown-custom input {
+      flex: 1; padding: 0.4rem 0.55rem;
+      border: var(--border); border-radius: 4px;
+      font-size: 0.8125rem; color: var(--text-primary); background: var(--surface);
+    }
+    .label-dropdown-custom input:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-light);
+    }
+
+    /* Form Elements */
+    .form-group { margin-bottom: 0.75rem; }
+    .form-group:last-child { margin-bottom: 0; }
+    .form-label {
+      display: block; margin-bottom: 0.35rem;
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--text-tertiary);
+    }
+
+    .form-input, .form-select, .form-textarea {
+      width: 100%; padding: 0.55rem 0.75rem;
+      border: var(--border); border-radius: 6px;
+      font-family: inherit; font-size: 0.9rem;
+      color: var(--text-primary); background: var(--surface);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+    .form-textarea {
+      resize: vertical; min-height: 80px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Menlo', 'Monaco', monospace;
+      font-size: 0.875rem; line-height: 1.5;
+    }
+    .row-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 0.875rem; }
+
+    /* Button */
+    .button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+      padding: 0.625rem 1.125rem; border: none; border-radius: var(--radius-sm);
+      font-size: 0.875rem; font-weight: 600; cursor: pointer;
+      transition: all 0.2s var(--ease-out); white-space: nowrap;
+      letter-spacing: -0.005em;
+    }
+    .button-primary {
+      background: var(--gradient-accent);
+      color: white;
+      box-shadow: 0 1px 2px rgba(99, 102, 241, 0.25), 0 4px 12px -2px rgba(99, 102, 241, 0.3);
+    }
+    .button-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(99, 102, 241, 0.3), 0 8px 20px -4px rgba(99, 102, 241, 0.4);
+    }
+    .button-primary:active:not(:disabled) { transform: translateY(0); }
+    .button-primary:disabled {
+      background: var(--gray-200); color: var(--text-tertiary);
+      cursor: not-allowed; box-shadow: none;
+    }
+    .button-secondary {
+      background: var(--surface); color: var(--text-primary);
+      border: var(--border); box-shadow: var(--shadow-sm);
+    }
+    .button-secondary:hover {
+      background: var(--gray-50); border-color: var(--gray-300);
+      transform: translateY(-1px);
+    }
+    .button-small { padding: 0.45rem 0.875rem; font-size: 0.8125rem; }
+
+    /* Toggle Switch */
+    .toggle-container { display: flex; align-items: center; gap: 0.75rem; }
+    .toggle {
+      position: relative; width: 44px; height: 24px;
+      background: var(--gray-300); border-radius: 12px;
+      cursor: pointer; transition: background 0.2s ease;
+    }
+    .toggle.active { background: var(--accent); }
+    .toggle::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 20px; height: 20px; background: white;
+      border-radius: 10px; transition: left 0.2s ease;
+      box-shadow: var(--shadow-sm);
+    }
+    .toggle.active::after { left: 22px; }
+    .toggle-label { font-size: 0.9rem; color: var(--text-secondary); }
+
+    /* Slack Section */
+    .slack-controls { display: flex; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; }
+
+    /* Slack Channel Selector */
+    .channel-selector { margin-bottom: 1rem; }
+    .channel-selector-row {
+      display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    }
+    .channel-selector select {
+      padding: 0.5rem 0.75rem; border: var(--border); border-radius: 6px;
+      font-size: 0.9rem; color: var(--text-primary); background: var(--surface);
+      min-width: 200px; cursor: pointer;
+    }
+    .channel-selector select:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+    .channel-search-container {
+      display: none; margin-top: 0.75rem;
+      background: var(--bg); border: var(--border); border-radius: 8px; padding: 1rem;
+    }
+    .channel-search-container.visible { display: block; }
+    .channel-search-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .channel-search-row input {
+      flex: 1; padding: 0.5rem 0.75rem; border: var(--border); border-radius: 6px;
+      font-size: 0.9rem; color: var(--text-primary); background: var(--surface);
+    }
+    .channel-search-row input:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+    .channel-results { display: flex; flex-direction: column; gap: 0.5rem; }
+    .channel-result-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.5rem 0.75rem; background: var(--surface);
+      border: var(--border); border-radius: 6px; cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .channel-result-item:hover { border-color: var(--accent); background: var(--accent-light); }
+    .channel-result-name { font-size: 0.9rem; font-weight: 500; }
+    .channel-result-type {
+      font-size: 0.75rem; color: var(--text-tertiary);
+      padding: 0.15rem 0.5rem; background: var(--gray-100);
+      border-radius: 4px;
+    }
+
+    /* Footer */
+    .dashboard-footer {
+      background: var(--surface-glass);
+      backdrop-filter: blur(12px) saturate(180%);
+      -webkit-backdrop-filter: blur(12px) saturate(180%);
+      border-top: 1px solid rgba(229, 231, 236, 0.6);
+      padding: 1.125rem 2rem;
+      position: sticky; bottom: 0; z-index: 10;
+    }
+    .footer-content {
+      max-width: 1400px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
+    }
+    .footer-status {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.875rem; color: var(--text-tertiary); font-weight: 500;
+    }
+    .approval-count {
+      font-weight: 700; color: var(--accent-deep);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Progress Bar */
+    .progress-bar { display: none; margin-bottom: 1rem; }
+    .progress-bar.show { display: block; }
+    .progress-title { font-size: 0.9rem; font-weight: 500; color: var(--text-primary); margin-bottom: 0.5rem; }
+    .progress-track { width: 100%; height: 6px; background: var(--gray-200); border-radius: 3px; overflow: hidden; }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent) 0%, #6366f1 100%);
+      border-radius: 3px; transition: width 0.3s ease;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center; padding: 3.5rem 2rem;
+      color: var(--text-tertiary);
+      background: var(--gradient-accent-soft);
+      border-radius: var(--radius-lg);
+    }
+    .empty-state-icon {
+      font-size: 2.75rem; margin-bottom: 0.875rem; opacity: 0.6;
+      display: inline-block;
+    }
+    .empty-state-title {
+      font-size: 1rem; font-weight: 600; color: var(--text-primary);
+      margin-bottom: 0.375rem; letter-spacing: -0.01em;
+    }
+    .empty-state-message { font-size: 0.875rem; }
+
+    /* Error State */
+    .error-state {
+      background: var(--red-light); color: var(--red);
+      border: 1px solid var(--red); border-radius: 10px;
+      padding: 1.5rem; margin-bottom: 1.5rem;
+    }
+    .error-state-title { font-weight: 600; margin-bottom: 0.5rem; }
+    .error-state-message { font-size: 0.9rem; line-height: 1.5; }
+
+    /* Debug Console */
+    #debugConsole {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0;
+      max-height: 40vh; overflow-y: auto;
+      background: #1e1e2e; color: #cdd6f4;
+      font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+      font-size: 0.75rem; line-height: 1.4;
+      z-index: 9999; border-top: 2px solid var(--accent);
+      padding: 0.5rem;
+    }
+    #debugConsole.visible { display: block; }
+    .debug-line { padding: 2px 4px; border-bottom: 1px solid #313244; }
+    .debug-line.error { color: #f38ba8; }
+    .debug-line.success { color: #a6e3a1; }
+    .debug-line.warn { color: #fab387; }
+    .debug-line.info { color: #89b4fa; }
+    #debugToggle {
+      position: fixed; bottom: 8px; right: 8px;
+      background: #1e1e2e; color: #cdd6f4;
+      border: 1px solid #313244; border-radius: 6px;
+      padding: 4px 10px; font-size: 0.7rem;
+      cursor: pointer; z-index: 10000; opacity: 0.6;
+    }
+    #debugToggle:hover { opacity: 1; }
+    #debugToggle.active { opacity: 1; background: var(--accent); color: white; }
+
+    .card-description { font-size: 0.875rem; color: var(--text-secondary); line-height: 1.5; }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 768px) {
+      .row-2col { grid-template-columns: 1fr; }
+      .footer-content, .selection-footer-content { flex-direction: column; align-items: flex-start; }
+      .dashboard-content, .selection-content { padding: 1rem; }
+      .dashboard-header { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Debug Toggle -->
+  <button id="debugToggle">Debug</button>
+  <div id="debugConsole"></div>
+
+  <!-- Loading Screen -->
+  <div id="loadingContainer">
+    <div class="loading-card">
+      <div class="loading-logo">
+        <div class="loading-orb"></div>
+        <div class="loading-orb"></div>
+        <div class="loading-orb"></div>
+      </div>
+      <div class="loading-title">Meeting Sync</div>
+      <div class="loading-tagline">Connecting your meetings to your work</div>
+      <div class="loading-phases">
+        <div class="loading-phase active" data-phase="meetings">
+          <div class="loading-spinner"></div>
+          <span>Fetching meetings from Granola</span>
+        </div>
+        <div class="loading-phase" data-phase="jira">
+          <div class="loading-spinner"></div>
+          <span>Loading JIRA board</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Meeting Selection Screen -->
+  <div id="selectionContainer">
+    <div class="dashboard-header">
+      <div class="header-content">
+        <div class="header-title">Select Meetings to Sync</div>
+        <div class="header-subtitle" id="selectionSubtitle"><span id="selectionBoardDisplay">No board selected</span></div>
+      </div>
+    </div>
+
+    <div class="selection-content">
+      <div class="selection-wrapper">
+        <div class="selection-section">
+          <div class="selection-section-title">JIRA Board</div>
+          <div class="board-controls" id="boardControls"></div>
+          <div class="board-search-container" id="boardSearchContainer">
+            <div class="board-search-row">
+              <input type="text" class="form-input board-search-input" id="boardSearchInput" placeholder="Project key (e.g. SPLT) or exact full name...">
+              <button type="button" class="button button-primary button-small" id="boardSearchBtn">Search</button>
+            </div>
+            <div id="boardResults" style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.75rem;"></div>
+          </div>
+        </div>
+
+        <div class="selection-section">
+          <div class="selection-section-header">
+            <div class="selection-section-title">Meetings</div>
+            <div class="time-range-controls">
+              <button class="time-range-pill active" data-range="this_week">This Week</button>
+              <button class="time-range-pill" data-range="last_week">Last Week</button>
+              <button class="time-range-pill" data-range="last_30_days">Last 30 Days</button>
+            </div>
+          </div>
+          <div class="select-all-section">
+            <input type="checkbox" id="selectAllCheckbox">
+            <label for="selectAllCheckbox">Select all meetings</label>
+          </div>
+          <div id="meetingsList" class="meeting-cards"></div>
+          <div id="noMeetingsMsg" class="empty-state hidden">
+            <div class="empty-state-icon">&#128197;</div>
+            <div class="empty-state-title">No meetings found</div>
+            <div class="empty-state-message">Try a different time range, or check that Granola is connected.</div>
+          </div>
+        </div>
+
+        <div class="selection-section prompt-section" id="slackPromptSection">
+          <button type="button" class="prompt-toggle" data-prompt-toggle="slack">
+            <span class="prompt-toggle-label">
+              <span class="selection-section-title">Slack Update Tone</span>
+              <span class="prompt-toggle-hint">Customize the voice of the generated Slack summary</span>
+            </span>
+            <svg class="prompt-toggle-chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 8 10 12 14 8"></polyline></svg>
+          </button>
+          <div class="prompt-body">
+            <textarea class="form-textarea" id="slackPromptInput" placeholder="Leave blank to use the default tone…"></textarea>
+            <div class="prompt-body-actions">
+              <button type="button" class="button button-secondary button-small" id="slackPromptReset">Reset to default</button>
+            </div>
+            <div class="prompt-body-footnote">Saved automatically. Leave blank to fall back to the default.</div>
+          </div>
+        </div>
+
+        <div class="selection-section prompt-section" id="commentPromptSection">
+          <button type="button" class="prompt-toggle" data-prompt-toggle="comment">
+            <span class="prompt-toggle-label">
+              <span class="selection-section-title">JIRA Comment Tone</span>
+              <span class="prompt-toggle-hint">Shape how AI-proposed ticket comments are written</span>
+            </span>
+            <svg class="prompt-toggle-chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 8 10 12 14 8"></polyline></svg>
+          </button>
+          <div class="prompt-body">
+            <textarea class="form-textarea" id="commentPromptInput" placeholder="Leave blank to use the default tone…"></textarea>
+            <div class="prompt-body-actions">
+              <button type="button" class="button button-secondary button-small" id="commentPromptReset">Reset to default</button>
+            </div>
+            <div class="prompt-body-footnote">Saved automatically. Leave blank to fall back to the default.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="selection-footer">
+      <div class="selection-footer-content">
+        <div class="selection-count">
+          <span id="selectedCount" class="selection-count-num">0</span> of <span id="totalCount">0</span> selected
+        </div>
+        <button class="button button-primary" id="analyzeButton" disabled>Analyze Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analysis Loading Overlay (full-screen, center-aligned, reuses orb animation) -->
+  <div id="analysisLoadingOverlay">
+    <div class="loading-card">
+      <div class="loading-logo">
+        <div class="loading-orb"></div>
+        <div class="loading-orb"></div>
+        <div class="loading-orb"></div>
+      </div>
+      <div class="loading-title">Analyzing meetings</div>
+      <div class="loading-tagline" id="analysisLoadingSubtitle">Cross-referencing your conversations with the board</div>
+      <div class="loading-phases">
+        <div class="loading-phase active" data-analysis-phase="board">
+          <div class="loading-spinner"></div>
+          <span>Refreshing JIRA board</span>
+        </div>
+        <div class="loading-phase active" data-analysis-phase="details">
+          <div class="loading-spinner"></div>
+          <span>Loading meeting details</span>
+        </div>
+        <div class="loading-phase active" data-analysis-phase="ai">
+          <div class="loading-spinner"></div>
+          <span>Generating proposals</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recap screen — shown after Submit to JIRA -->
+  <div id="recapContainer">
+    <div class="recap-wrapper" id="recapBody"></div>
+  </div>
+
+  <!-- Main Dashboard -->
+  <div id="mainContainer">
+    <div class="dashboard-header dashboard-header-gradient">
+      <div class="header-content">
+        <div class="header-title" id="analysisHeaderTitle">Meeting Sync Dashboard</div>
+        <div class="header-subtitle-with-link">
+          <span id="analysisHeaderMeta"><span id="boardDisplayName">No board selected</span> &bull; Project <span id="boardDisplayKey">—</span></span>
+          <span style="margin-left: auto;">
+            <a class="back-link" id="backLink">&larr; Change meetings</a>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-content">
+      <div class="content-wrapper">
+        <div id="errorContainer"></div>
+        <div class="meeting-tabs" id="meetingTabs"></div>
+        <div id="meetingContents"></div>
+      </div>
+    </div>
+
+    <div class="dashboard-footer">
+      <div class="footer-content">
+        <div class="footer-status">
+          <span id="approvalStatus">
+            <span id="approvalCount" class="approval-count">0</span> items approved
+          </span>
+        </div>
+        <button class="button button-primary" id="submitButton" style="display: none;">
+          Submit to JIRA
+        </button>
+      </div>
+      <div id="progressBar" class="progress-bar" style="margin: 1rem 0 0 0;">
+        <div class="progress-title">Submitting changes...</div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+(async function main() {
+  try {
+    // ============================================
+    // Debug Console
+    // ============================================
+    const debugEl = document.getElementById('debugConsole');
+    const debugToggle = document.getElementById('debugToggle');
+    const debugLines = [];
+
+    const debug = (msg, level = 'info') => {
+      const ts = new Date().toLocaleTimeString();
+      const line = document.createElement('div');
+      line.className = 'debug-line ' + level;
+      line.textContent = `[${ts}] ${msg}`;
+      debugEl.appendChild(line);
+      debugEl.scrollTop = debugEl.scrollHeight;
+      debugLines.push({ ts, msg, level });
+      console.log(`[debug:${level}] ${msg}`);
+    };
+
+    debugToggle.addEventListener('click', () => {
+      debugEl.classList.toggle('visible');
+      debugToggle.classList.toggle('active');
+    });
+
+    debug('Meeting Sync artifact starting...');
+
+    // ============================================
+    // Configuration (reads from persisted JSON tag, falls back to defaults)
+    // ============================================
+    // Persistence strategy:
+    //   Primary = in-page <script id="persisted-config"> JSON tag, rewritten
+    //   via mcp__cowork__update_artifact. Survives artifact reloads.
+    //   Backup = localStorage under the same key. Survives a plain refresh
+    //   even when update_artifact doesn't propagate (Cowork caching, missing
+    //   grants, etc.). Merged at load time so neither layer alone can lose
+    //   data.
+    const LOCAL_STORAGE_KEY = 'meeting-sync.persisted-config.v1';
+
+    const _readLocalStorageConfig = () => {
+      try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch { return null; }
+    };
+
+    const _readTagConfig = () => {
+      try {
+        const el = document.getElementById('persisted-config');
+        if (el) return JSON.parse(el.textContent);
+      } catch (e) { console.warn('Failed to parse persisted config tag:', e); }
+      return null;
+    };
+
+    const _mergeConfigs = (a, b) => {
+      // Prefer whichever side has data; union boards/channels by identity.
+      const pick = (k, fallback) => {
+        if (a && typeof a[k] !== 'undefined' && a[k] !== null && a[k] !== '') return a[k];
+        if (b && typeof b[k] !== 'undefined' && b[k] !== null && b[k] !== '') return b[k];
+        return fallback;
+      };
+      const mergeArr = (key, id) => {
+        const seen = new Set();
+        const out = [];
+        [a, b].forEach(src => {
+          if (!src || !Array.isArray(src[key])) return;
+          src[key].forEach(item => {
+            const k = item && item[id];
+            if (!k || seen.has(k)) return;
+            seen.add(k);
+            out.push(item);
+          });
+        });
+        return out;
+      };
+      return {
+        savedBoards: mergeArr('savedBoards', 'projectKey'),
+        savedSlackChannels: mergeArr('savedSlackChannels', 'id'),
+        slackPromptOverride: pick('slackPromptOverride', ''),
+        commentPromptOverride: pick('commentPromptOverride', ''),
+        _updatedAt: Math.max(
+          (a && a._updatedAt) || 0,
+          (b && b._updatedAt) || 0
+        )
+      };
+    };
+
+    const _loadPersistedConfig = () => {
+      const tag = _readTagConfig();
+      const ls = _readLocalStorageConfig();
+      if (!tag && !ls) return { savedBoards: [], savedSlackChannels: [] };
+      if (!ls) return tag;
+      if (!tag) return ls;
+      // Both exist — prefer whichever is newer, but always union the collections.
+      return _mergeConfigs(
+        (ls._updatedAt || 0) >= (tag._updatedAt || 0) ? ls : tag,
+        (ls._updatedAt || 0) >= (tag._updatedAt || 0) ? tag : ls
+      );
+    };
+    const _persisted = _loadPersistedConfig();
+
+    // Default prompt tone guidance (editable by user at runtime).
+    const DEFAULT_SLACK_PROMPT = `A conversational recap — like a teammate posting an update. Prose for decisions, bullets only for action items at the end. Close with a stats line.`;
+    const DEFAULT_COMMENT_PROMPT = `Good comments say WHAT was decided, not just "discussed in meeting". Include the ticket's current assignee from the board data.`;
+
+    const CONFIG = {
+      savedBoards: _persisted.savedBoards || [],
+      savedSlackChannels: _persisted.savedSlackChannels || [],
+      slackPromptOverride: typeof _persisted.slackPromptOverride === 'string' ? _persisted.slackPromptOverride : '',
+      commentPromptOverride: typeof _persisted.commentPromptOverride === 'string' ? _persisted.commentPromptOverride : ''
+    };
+
+    // ============================================
+    // State
+    // ============================================
+    let state = {
+      meetings: [],
+      jiraIssues: [],
+      proposals: {},
+      approvals: {},
+      submitting: false,
+      selectedMeetingIds: new Set(),
+      currentTimeRange: 'this_week',
+      allFetchedMeetings: [],
+      boardAssignees: [],      // { displayName, ticketCount, source: "board"|"meeting" }
+      jiraEpics: [],           // { key, summary, status } — non-Done epics on the selected board
+      slackChannels: [...CONFIG.savedSlackChannels],  // available channels
+      selectedSlackChannel: CONFIG.savedSlackChannels[0] || null,
+      selectedBoard: CONFIG.savedBoards[0] || null,
+      savedBoards: [...CONFIG.savedBoards],
+      slackPromptOverride: CONFIG.slackPromptOverride,
+      commentPromptOverride: CONFIG.commentPromptOverride
+    };
+
+    // ============================================
+    // UI Helpers
+    // ============================================
+    const updatePhase = (phase, done = false) => {
+      const el = document.querySelector(`[data-phase="${phase}"]`);
+      if (el) {
+        if (done) { el.classList.remove('active'); el.classList.add('done'); }
+        else { el.classList.add('active'); }
+      }
+    };
+
+    const updateAnalysisPhase = (phase, done = false) => {
+      const el = document.querySelector(`[data-analysis-phase="${phase}"]`);
+      if (el) {
+        if (done) { el.classList.remove('active'); el.classList.add('done'); }
+        else { el.classList.add('active'); }
+      }
+    };
+
+    const resetAnalysisPhases = () => {
+      document.querySelectorAll('[data-analysis-phase]').forEach(el => {
+        el.classList.remove('done');
+        el.classList.add('active');
+      });
+    };
+
+    const showError = (title, message) => {
+      const container = document.getElementById('errorContainer');
+      const error = document.createElement('div');
+      error.className = 'error-state';
+      error.innerHTML = `
+        <div class="error-state-title">${escapeHtml(title)}</div>
+        <div class="error-state-message">${escapeHtml(message)}</div>
+      `;
+      container.appendChild(error);
+    };
+
+    const hideRecap = () => {
+      const el = document.getElementById('recapContainer');
+      if (el) el.style.display = 'none';
+    };
+
+    const showLoading = () => {
+      document.getElementById('loadingContainer').style.display = 'flex';
+      document.getElementById('selectionContainer').style.display = 'none';
+      document.getElementById('mainContainer').style.display = 'none';
+      hideRecap();
+    };
+
+    const showSelection = () => {
+      document.getElementById('loadingContainer').style.display = 'none';
+      document.getElementById('selectionContainer').style.display = 'flex';
+      document.getElementById('mainContainer').style.display = 'none';
+      hideRecap();
+    };
+
+    const showMain = () => {
+      document.getElementById('loadingContainer').style.display = 'none';
+      document.getElementById('selectionContainer').style.display = 'none';
+      document.getElementById('mainContainer').style.display = 'flex';
+      hideRecap();
+    };
+
+    const showRecap = () => {
+      document.getElementById('loadingContainer').style.display = 'none';
+      document.getElementById('selectionContainer').style.display = 'none';
+      document.getElementById('mainContainer').style.display = 'none';
+      document.getElementById('recapContainer').style.display = 'flex';
+      window.scrollTo(0, 0);
+    };
+
+    const renderRecap = (results) => {
+      const baseUrl = state.selectedBoard && state.selectedBoard.baseUrl
+        ? state.selectedBoard.baseUrl
+        : 'https://asudev.jira.com';
+      const jiraLink = (key) => `${baseUrl}/browse/${escapeHtml(key)}`;
+
+      const commentsAdded = results.commentsAdded || [];
+      const ticketsCreated = results.ticketsCreated || [];
+      const failures = results.failures || [];
+      const totalSuccesses = commentsAdded.length + ticketsCreated.length;
+      const totalFailures = failures.length;
+
+      const stats = [];
+      if (commentsAdded.length > 0) stats.push(`${commentsAdded.length} comment${commentsAdded.length === 1 ? '' : 's'} added`);
+      if (ticketsCreated.length > 0) stats.push(`${ticketsCreated.length} new ticket${ticketsCreated.length === 1 ? '' : 's'} created`);
+      if (totalFailures > 0) stats.push(`${totalFailures} failed`);
+      const subtitle = stats.length > 0 ? stats.join(' · ') : 'Nothing was submitted';
+
+      const commentSection = commentsAdded.length === 0 ? '' : `
+        <div class="recap-section">
+          <div class="recap-section-header">
+            <span class="recap-section-title">Comments added</span>
+            <span class="recap-section-count">${commentsAdded.length}</span>
+          </div>
+          ${commentsAdded.map(c => `
+            <div class="recap-item">
+              <div class="recap-item-main">
+                <div class="recap-item-title">${escapeHtml(c.summary || c.key)}</div>
+                <div class="recap-item-meta"><span>${escapeHtml(c.key)}</span></div>
+              </div>
+              <a class="recap-item-link" href="${jiraLink(c.key)}" target="_blank" rel="noopener noreferrer" data-external-link>${escapeHtml(c.key)} &rarr;</a>
+            </div>
+          `).join('')}
+        </div>`;
+
+      const ticketSection = ticketsCreated.length === 0 ? '' : `
+        <div class="recap-section">
+          <div class="recap-section-header">
+            <span class="recap-section-title">New tickets created</span>
+            <span class="recap-section-count">${ticketsCreated.length}</span>
+          </div>
+          ${ticketsCreated.map(t => {
+            const metaBits = [];
+            if (t.type) metaBits.push(escapeHtml(t.type));
+            if (t.priority) metaBits.push(escapeHtml(t.priority));
+            if (t.assignee) metaBits.push(escapeHtml(t.assignee));
+            if (t.epicKey) metaBits.push(`Epic: ${escapeHtml(t.epicKey)}`);
+            const linkHtml = t.key
+              ? `<a class="recap-item-link" href="${jiraLink(t.key)}" target="_blank" rel="noopener noreferrer" data-external-link>${escapeHtml(t.key)} &rarr;</a>`
+              : `<span class="recap-item-link no-key" title="Issue key could not be extracted from the response — check JIRA directly">no key</span>`;
+            return `
+              <div class="recap-item">
+                <div class="recap-item-main">
+                  <div class="recap-item-title">${escapeHtml(t.title)}</div>
+                  <div class="recap-item-meta">${metaBits.map(m => `<span>${m}</span>`).join('<span class="meta-divider">&bull;</span>')}</div>
+                </div>
+                ${linkHtml}
+              </div>
+            `;
+          }).join('')}
+        </div>`;
+
+      const failureSection = totalFailures === 0 ? '' : `
+        <div class="recap-section failures">
+          <div class="recap-section-header">
+            <span class="recap-section-title">Couldn't submit</span>
+            <span class="recap-section-count">${totalFailures}</span>
+          </div>
+          ${failures.map(f => `
+            <div class="recap-item">
+              <div class="recap-item-main">
+                <div class="recap-item-title">${escapeHtml(f.label)}</div>
+                <div class="recap-failure-error">${escapeHtml(f.error)}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>`;
+
+      const checkmarkSvg = totalFailures === 0 && totalSuccesses > 0
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12 10 17 19 8"></polyline></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+      const title = totalFailures === 0 && totalSuccesses > 0
+        ? 'Sync complete'
+        : totalSuccesses === 0 ? 'Nothing submitted' : 'Sync finished with issues';
+
+      document.getElementById('recapBody').innerHTML = `
+        <div class="recap-hero">
+          <div class="recap-checkmark">${checkmarkSvg}</div>
+          <div class="recap-title">${title}</div>
+          <div class="recap-subtitle">${subtitle}</div>
+        </div>
+        ${commentSection}
+        ${ticketSection}
+        ${failureSection}
+        <div class="recap-actions">
+          <button type="button" class="button button-secondary" id="recapBackToDashboard">Back to dashboard</button>
+          <button type="button" class="button button-primary" id="recapStartNewSync">Start a new sync</button>
+        </div>
+      `;
+
+      document.getElementById('recapBackToDashboard').addEventListener('click', () => {
+        showMain();
+      });
+      document.getElementById('recapStartNewSync').addEventListener('click', () => {
+        showSelection();
+        renderMeetingsList();
+        attachCheckboxListeners();
+      });
+    };
+
+    const showAnalysisLoading = () => {
+      resetAnalysisPhases();
+      document.getElementById('analysisLoadingOverlay').classList.add('visible');
+    };
+    const hideAnalysisLoading = () => { document.getElementById('analysisLoadingOverlay').classList.remove('visible'); };
+
+    const escapeHtml = (text) => {
+      if (!text) return '';
+      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+      return String(text).replace(/[&<>"']/g, (c) => map[c]);
+    };
+
+    const formatDate = (dateStr) => {
+      if (!dateStr) return 'N/A';
+      try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+      } catch { return 'N/A'; }
+    };
+
+    // Build a concise header title from one or more meetings
+    const buildAnalysisHeaderTitle = (meetings) => {
+      if (!meetings || meetings.length === 0) return 'Meeting Sync Dashboard';
+      if (meetings.length === 1) return meetings[0].title || 'Untitled Meeting';
+      if (meetings.length === 2) return `${meetings[0].title} + ${meetings[1].title}`;
+      return `${meetings[0].title} + ${meetings.length - 1} more`;
+    };
+
+    // ============================================
+    // MCP Tool Calls — with robust text extraction
+    // ============================================
+
+    /**
+     * Extract plain text from any MCP tool response shape.
+     * Handles: string, { content: [{ text }] }, { content: string },
+     * { structuredContent: ... }, { text: ... }, nested arrays, etc.
+     */
+    const extractText = (result) => {
+      if (!result) return '';
+      if (typeof result === 'string') return result;
+
+      // Try every known shape
+      const candidates = [];
+
+      // Shape 1: result.content is array of {type, text} objects (MCP standard)
+      if (Array.isArray(result.content)) {
+        const texts = result.content
+          .map(c => c.text || c.value || (typeof c === 'string' ? c : ''))
+          .filter(Boolean);
+        if (texts.length > 0) candidates.push(texts.join('\n'));
+      }
+
+      // Shape 2: result.content is a string
+      if (typeof result.content === 'string') {
+        candidates.push(result.content);
+      }
+
+      // Shape 3: result.text is a string
+      if (typeof result.text === 'string') {
+        candidates.push(result.text);
+      }
+
+      // Shape 4: result.structuredContent
+      if (result.structuredContent) {
+        candidates.push(JSON.stringify(result.structuredContent));
+      }
+
+      // Shape 5: result.data
+      if (result.data) {
+        if (typeof result.data === 'string') candidates.push(result.data);
+        else candidates.push(JSON.stringify(result.data));
+      }
+
+      // Shape 6: result itself might be the content array
+      if (Array.isArray(result)) {
+        const texts = result.map(c => c.text || c.value || (typeof c === 'string' ? c : '')).filter(Boolean);
+        if (texts.length > 0) candidates.push(texts.join('\n'));
+      }
+
+      // Pick the longest candidate (most likely to have the full response)
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.length - a.length);
+        return candidates[0];
+      }
+
+      // Last resort: stringify everything
+      try { return JSON.stringify(result); } catch { return String(result); }
+    };
+
+    /*
+      MCP server resolution.
+
+      The artifact references three Anthropic-managed connectors via sentinel
+      tokens — MCP_GRANOLA, MCP_ZAPIER, MCP_SLACK — instead of user-specific
+      server IDs. Cowork's `callMcpTool` requires the full
+      `mcp__<server-uuid>__<tool>` form, and those UUIDs are per-user, so we
+      have to discover them at runtime.
+
+      Resolution flow (runs once, memoized via _toolListPromise):
+        1. Call `mcp__cowork__read_widget_context` to ask the host for the
+           tool list it granted this artifact. This is the only path that
+           actually works inside a Cowork artifact — `window.cowork.tools`
+           is not populated for security reasons.
+        2. From the returned tool list, find each connector by tool-name
+           suffix (e.g. anything ending in `__list_meetings` -> Granola).
+        3. Cache the resolved prefix per sentinel for the rest of the session.
+
+      If `read_widget_context` fails or returns nothing parseable, we fall
+      back to `window.cowork.tools` / `listTools()` just in case a future
+      Cowork build exposes them — but in current Cowork, the introspection
+      tool is the source of truth.
+
+      The Slack connector is disambiguated against Zapier (which also exposes
+      slack_*-named tools) by requiring the bare `slack_send_message` name —
+      Zapier's variants are `slack_send_channel_message`,
+      `slack_send_direct_message`, etc., which won't match an exact suffix.
+    */
+    const SENTINEL_TO_PROBE_TOOL = {
+      MCP_GRANOLA: 'list_meetings',
+      MCP_ZAPIER:  'jira_software_cloud_find_project',
+      MCP_SLACK:   'slack_send_message',
+    };
+    const SENTINEL_TO_CANONICAL_NAME = {
+      MCP_GRANOLA: 'Granola',
+      MCP_ZAPIER:  'Zapier (with Jira)',
+      MCP_SLACK:   'Slack',
+    };
+    const resolvedSentinels = {}; // sentinel -> real prefix segment (a UUID, in practice)
+    let _toolListPromise = null;  // memoizes the one-time introspection call
+
+    const listHostTools = () => {
+      // Fallback path for environments where Cowork exposes the list directly.
+      // Not the primary resolution path — see resolveSentinels below.
+      try {
+        if (!window.cowork) return [];
+        if (Array.isArray(window.cowork.tools)) return window.cowork.tools.slice();
+        if (window.cowork.tools && typeof window.cowork.tools === 'object') {
+          return Object.keys(window.cowork.tools);
+        }
+        if (typeof window.cowork.listTools === 'function') {
+          const out = window.cowork.listTools();
+          if (Array.isArray(out)) return out.slice();
+        }
+      } catch (e) { debug(`listHostTools fallback failed: ${e.message}`, 'warn'); }
+      return [];
+    };
+
+    const findPrefixBySuffix = (tools, suffix) => {
+      // Looking for an exact tool name `mcp__<prefix>__<suffix>`. The suffix
+      // must be anchored on `__<suffix>` so, e.g., the probe
+      // `slack_send_message` doesn't match Zapier's `slack_send_channel_message`.
+      const anchored = '__' + suffix;
+      for (const t of tools) {
+        if (typeof t !== 'string') continue;
+        if (!t.startsWith('mcp__')) continue;
+        if (t.endsWith(anchored)) {
+          const middle = t.slice('mcp__'.length, t.length - anchored.length);
+          if (middle.length > 0) return middle;
+        }
+      }
+      return null;
+    };
+
+    /*
+      Extract a flat list of `mcp__*__*` tool names from whatever shape
+      `read_widget_context` returns. We don't trust the schema — different
+      Cowork builds have shipped slightly different shapes — so we scan
+      defensively: parsed objects with common field names, JSON in a text
+      field, and a regex pass over the stringified body as the last resort.
+    */
+    const extractToolNamesFromContext = (response) => {
+      const collected = new Set();
+      const collectFromArray = (arr) => {
+        if (!Array.isArray(arr)) return;
+        for (const t of arr) {
+          if (typeof t === 'string' && t.startsWith('mcp__')) collected.add(t);
+          else if (t && typeof t === 'object' && typeof t.name === 'string' && t.name.startsWith('mcp__')) collected.add(t.name);
+        }
+      };
+
+      // Object-shape probes.
+      const probe = (obj) => {
+        if (!obj || typeof obj !== 'object') return;
+        collectFromArray(obj.tools);
+        collectFromArray(obj.available_tools);
+        collectFromArray(obj.mcpTools);
+        collectFromArray(obj.mcp_tools);
+        collectFromArray(obj.granted_tools);
+        if (obj.context && typeof obj.context === 'object') probe(obj.context);
+        if (obj.widget && typeof obj.widget === 'object') probe(obj.widget);
+        if (obj.data && typeof obj.data === 'object') probe(obj.data);
+      };
+      if (Array.isArray(response)) collectFromArray(response);
+      probe(response);
+
+      // Some hosts return MCP's content-array shape; pull the text and try
+      // to parse / regex-scan it.
+      try {
+        const text = extractText(response);
+        if (text) {
+          try {
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) collectFromArray(parsed);
+            else probe(parsed);
+          } catch { /* not JSON, fine */ }
+          const re = /mcp__[A-Za-z0-9_\-]+__[A-Za-z0-9_\-]+/g;
+          let m;
+          while ((m = re.exec(text)) !== null) collected.add(m[0]);
+        }
+      } catch { /* swallow */ }
+
+      return Array.from(collected);
+    };
+
+    const resolveSentinels = async () => {
+      if (_toolListPromise) return _toolListPromise;
+      _toolListPromise = (async () => {
+        if (typeof window.cowork === 'undefined' || !window.cowork.callMcpTool) {
+          debug('Cowork host missing — cannot resolve MCP sentinels.', 'error');
+          return;
+        }
+
+        // Primary: ask Cowork for its widget context (the granted tool list).
+        let hostTools = [];
+        try {
+          debug('Resolving MCP connectors via mcp__cowork__read_widget_context…', 'info');
+          const ctx = await window.cowork.callMcpTool('mcp__cowork__read_widget_context', {});
+          hostTools = extractToolNamesFromContext(ctx);
+          debug(`read_widget_context returned ${hostTools.length} tool name(s)`, hostTools.length ? 'success' : 'warn');
+        } catch (e) {
+          debug(`read_widget_context unavailable: ${e.message}`, 'warn');
+        }
+
+        // Fallback: window.cowork.tools, in case a future build populates it.
+        if (hostTools.length === 0) {
+          hostTools = listHostTools();
+          if (hostTools.length) debug(`Fell back to window.cowork.tools (${hostTools.length} entries)`, 'info');
+        }
+
+        // Map each sentinel to its real prefix.
+        for (const sentinel of Object.keys(SENTINEL_TO_PROBE_TOOL)) {
+          const probe = SENTINEL_TO_PROBE_TOOL[sentinel];
+          const prefix = findPrefixBySuffix(hostTools, probe);
+          if (prefix) {
+            resolvedSentinels[sentinel] = prefix;
+            debug(`Resolved ${sentinel} -> mcp__${prefix}__`, 'success');
+          } else {
+            const friendly = SENTINEL_TO_CANONICAL_NAME[sentinel] || sentinel;
+            debug(`Could not resolve ${sentinel} (${friendly}) — no tool ending in __${probe} was found in the host's granted list.`, 'warn');
+          }
+        }
+      })();
+      return _toolListPromise;
+    };
+
+    const callMcpTool = async (toolName, args) => {
+      // Sentinel-form names get rewritten to the real `mcp__<uuid>__<tool>`
+      // form using the resolved map. Non-sentinel names (like
+      // `mcp__cowork__update_artifact`) pass through verbatim.
+      const sentinelMatch = toolName.match(/^mcp__(MCP_GRANOLA|MCP_ZAPIER|MCP_SLACK)__(.+)$/);
+      let resolvedName = toolName;
+      if (sentinelMatch) {
+        const sentinel = sentinelMatch[1];
+        const toolSuffix = sentinelMatch[2];
+        await resolveSentinels();
+        const prefix = resolvedSentinels[sentinel];
+        if (!prefix) {
+          const friendly = SENTINEL_TO_CANONICAL_NAME[sentinel] || sentinel;
+          throw new Error(`${friendly} isn't connected to this Cowork canvas. Open Claude → Settings → Connectors, add ${friendly}, then reload this artifact.`);
+        }
+        resolvedName = `mcp__${prefix}__${toolSuffix}`;
+      }
+
+      debug(`Calling: ${resolvedName}`, 'info');
+      debug(`Args: ${JSON.stringify(args)}`, 'info');
+
+      if (typeof window.cowork === 'undefined' || !window.cowork.callMcpTool) {
+        throw new Error('Cowork MCP tools not available — is this running inside a Cowork artifact?');
+      }
+
+      try {
+        const result = await window.cowork.callMcpTool(resolvedName, args);
+        return processMcpResult(resolvedName, result);
+      } catch (err) {
+        debug(`MCP Error (${resolvedName}): ${err.message}`, 'error');
+        throw err;
+      }
+    };
+
+    const processMcpResult = (toolName, result) => {
+      try {
+
+        // Log the raw response shape for debugging
+        const resultType = typeof result;
+        const resultKeys = result && typeof result === 'object' ? Object.keys(result) : [];
+        debug(`Response type: ${resultType}, keys: [${resultKeys.join(', ')}]`, 'success');
+
+        if (result && result.content && Array.isArray(result.content)) {
+          debug(`content is array with ${result.content.length} items, first item keys: [${result.content[0] ? Object.keys(result.content[0]).join(', ') : 'empty'}]`, 'info');
+        }
+
+        const text = extractText(result);
+        debug(`Extracted text length: ${text.length} chars`, text.length > 0 ? 'success' : 'warn');
+        if (text.length < 500) {
+          debug(`Full text: ${text.slice(0, 500)}`, 'info');
+        } else {
+          debug(`Text preview: ${text.slice(0, 200)}...`, 'info');
+        }
+
+        return result;
+      } catch (err) {
+        debug(`MCP Error (${toolName}): ${err.message}`, 'error');
+        throw err;
+      }
+    };
+
+    const sampleAI = async (prompt, data) => {
+      debug('Calling window.cowork.sample()...', 'info');
+      try {
+        if (typeof window.cowork === 'undefined' || !window.cowork.sample) {
+          throw new Error('Cowork sample not available');
+        }
+        const result = await window.cowork.sample(prompt, data);
+        debug(`Sample response length: ${result?.text?.length || 0}`, 'success');
+        return result;
+      } catch (err) {
+        debug(`Sample Error: ${err.message}`, 'error');
+        throw err;
+      }
+    };
+
+    // ============================================
+    // Auto-persist config (boards & channels)
+    // ============================================
+    let _persistDebounce = null;
+    const persistConfig = () => {
+      // Write localStorage synchronously (no debounce) — this is the backup
+      // path that always survives a plain refresh even if update_artifact
+      // doesn't. Cheap, fire-and-forget.
+      const buildConfigData = () => ({
+        savedBoards: state.savedBoards.map(b => ({ projectKey: b.projectKey, projectName: b.projectName, projectId: b.projectId || '', baseUrl: b.baseUrl || '' })),
+        savedSlackChannels: state.slackChannels.map(c => ({ id: c.id, name: c.name, type: c.type || 'public' })),
+        slackPromptOverride: state.slackPromptOverride || '',
+        commentPromptOverride: state.commentPromptOverride || '',
+        _updatedAt: Date.now()
+      });
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(buildConfigData()));
+      } catch (e) {
+        debug(`localStorage write failed (will fall back to artifact tag): ${e.message}`, 'warn');
+      }
+
+      // Debounce the heavier update_artifact call — if multiple adds happen
+      // quickly, only push once.
+      clearTimeout(_persistDebounce);
+      _persistDebounce = setTimeout(async () => {
+        try {
+          const configData = buildConfigData();
+          const configJson = JSON.stringify(configData);
+
+          // Update the in-page JSON tag
+          const tag = document.getElementById('persisted-config');
+          if (tag) tag.textContent = configJson;
+
+          // Get full HTML and push to update_artifact
+          const fullHtml = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+          debug('Persisting config to artifact...', 'info');
+          const result = await callMcpTool('mcp__cowork__update_artifact', {
+            id: 'meeting-sync',
+            html: fullHtml,
+            update_summary: 'Auto-save: updated boards/channels config'
+          });
+          // Sanity-check the response — Cowork returns isError=true on failure.
+          if (result && result.isError) {
+            debug(`update_artifact reported isError=true. Response: ${String(extractText(result)).slice(0, 200)}. Falling back to localStorage only.`, 'warn');
+          } else {
+            debug('Config persisted to artifact successfully (and localStorage)', 'success');
+          }
+        } catch (err) {
+          debug(`Config persist to artifact failed: ${err.message}. localStorage backup still in place.`, 'warn');
+          // Non-fatal — localStorage already has the config; next reload will pick it up.
+        }
+      }, 1500);
+    };
+
+    // ============================================
+    // Parse Granola Meetings from raw text
+    // ============================================
+    const parseGranolaMeetings = (raw) => {
+      const meetings = [];
+
+      // Method 1: XML-style parsing (Granola's native format)
+      // Match: <meeting id="..." title="..." date="...">
+      const meetingRegex = /<meeting\s+id="([^"]+)"\s+title="([^"]+)"\s+date="([^"]+)">/g;
+      let match;
+      while ((match = meetingRegex.exec(raw)) !== null) {
+        const endTag = raw.indexOf('</meeting>', match.index);
+        const block = endTag > -1 ? raw.slice(match.index, endTag) : raw.slice(match.index, match.index + 1000);
+        const participants = [];
+        const knownBlock = block.match(/<known_participants>([\s\S]*?)<\/known_participants>/);
+        if (knownBlock) {
+          knownBlock[1].split('\n').forEach(line => {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('<')) participants.push(trimmed);
+          });
+        }
+        meetings.push({ id: match[1], title: match[2], date: match[3], known_participants: participants });
+      }
+
+      if (meetings.length > 0) {
+        debug(`XML parse found ${meetings.length} meetings`, 'success');
+        return meetings;
+      }
+
+      // Method 2: Try JSON
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          debug(`JSON array parse found ${parsed.length} meetings`, 'success');
+          return parsed;
+        }
+        if (parsed.meetings && Array.isArray(parsed.meetings)) {
+          debug(`JSON .meetings parse found ${parsed.meetings.length} meetings`, 'success');
+          return parsed.meetings;
+        }
+        // Single meeting object
+        if (parsed.id && parsed.title) {
+          debug('JSON single meeting parse', 'success');
+          return [parsed];
+        }
+      } catch {
+        // Not JSON
+      }
+
+      // Method 3: Grep for any id/title patterns in unstructured text
+      const idMatches = [...raw.matchAll(/id[=:]\s*"?([0-9a-f-]{36})"?/gi)];
+      const titleMatches = [...raw.matchAll(/title[=:]\s*"([^"]+)"/gi)];
+      const dateMatches = [...raw.matchAll(/date[=:]\s*"([^"]+)"/gi)];
+
+      if (idMatches.length > 0 && titleMatches.length > 0) {
+        const count = Math.min(idMatches.length, titleMatches.length);
+        for (let i = 0; i < count; i++) {
+          meetings.push({
+            id: idMatches[i][1],
+            title: titleMatches[i][1],
+            date: dateMatches[i] ? dateMatches[i][1] : new Date().toISOString(),
+            known_participants: []
+          });
+        }
+        debug(`Fallback regex parse found ${meetings.length} meetings`, 'warn');
+        return meetings;
+      }
+
+      debug(`No meetings parsed from text (length ${raw.length}). First 300 chars: ${raw.slice(0, 300)}`, 'error');
+      return [];
+    };
+
+    // ============================================
+    // Data Fetching
+    // ============================================
+    const listMeetings = async (timeRange = 'this_week') => {
+      updatePhase('meetings');
+      debug(`Fetching meetings with time_range: ${timeRange}`);
+      try {
+        const result = await callMcpTool('mcp__MCP_GRANOLA__list_meetings', {
+          time_range: timeRange
+        });
+
+        // Extract text and parse
+        const raw = extractText(result);
+        const meetings = parseGranolaMeetings(raw);
+
+        const parsedMeetings = meetings.map(m => ({
+          id: m.id || '',
+          title: m.title || 'Untitled Meeting',
+          date: m.date || new Date().toISOString(),
+          summary: m.summary || '',
+          transcript: m.transcript || '',
+          participants: m.known_participants || m.participants || m.attendees || [],
+          ai_summary: m.ai_summary || ''
+        })).filter(m => m.id);
+
+        debug(`Final parsed: ${parsedMeetings.length} meetings`, parsedMeetings.length > 0 ? 'success' : 'warn');
+        parsedMeetings.forEach(m => debug(`  - ${m.title} (${m.date})`, 'info'));
+
+        updatePhase('meetings', true);
+        return parsedMeetings;
+      } catch (err) {
+        debug(`listMeetings failed: ${err.message}`, 'error');
+        showError('Failed to Fetch Meetings', err.message);
+        updatePhase('meetings', true);
+        return [];
+      }
+    };
+
+    const fetchMeetingDetails = async (meetings) => {
+      const meetingIds = meetings.map(m => m.id).filter(Boolean).slice(0, 10);
+      if (meetingIds.length === 0) return meetings;
+
+      debug(`Fetching details for ${meetingIds.length} meetings`);
+      try {
+        const result = await callMcpTool('mcp__MCP_GRANOLA__get_meetings', {
+          meeting_ids: meetingIds
+        });
+
+        const raw = extractText(result);
+
+        // Try to parse as JSON for structured details
+        let details = [];
+        try {
+          const parsed = JSON.parse(raw);
+          details = Array.isArray(parsed) ? parsed : parsed.meetings || [];
+        } catch {
+          // Not JSON — might be XML or plain text. Store as summary for all meetings.
+          debug('Detail response is not JSON — using as raw summary', 'warn');
+          meetings.forEach(m => { m.ai_summary = raw; });
+        }
+
+        if (details.length > 0) {
+          const detailMap = new Map();
+          details.forEach(d => {
+            const id = d.id || d.meeting_id || '';
+            if (id) detailMap.set(id, d);
+          });
+          meetings.forEach(m => {
+            const detail = detailMap.get(m.id);
+            if (detail) {
+              m.ai_summary = detail.ai_summary || detail.summary || detail.notes || m.ai_summary || '';
+              m.transcript = detail.transcript || m.transcript || '';
+              if (detail.attendees) m.participants = detail.attendees;
+              if (detail.known_participants) m.participants = detail.known_participants;
+            }
+          });
+          debug(`Merged details for ${details.length} meetings`, 'success');
+        } else if (raw.includes('<meeting')) {
+          // Try XML parsing for detail response too
+          debug('Attempting XML parse on detail response', 'info');
+          const detailMeetings = parseGranolaMeetings(raw);
+          // Look for summary/notes content in the XML blocks
+          const summaryRegex = /<ai_summary>([\s\S]*?)<\/ai_summary>/g;
+          const noteRegex = /<notes>([\s\S]*?)<\/notes>/g;
+          const transcriptRegex = /<transcript>([\s\S]*?)<\/transcript>/g;
+
+          meetings.forEach(m => {
+            // Find the block for this meeting
+            const blockStart = raw.indexOf(`id="${m.id}"`);
+            if (blockStart > -1) {
+              const blockEnd = raw.indexOf('</meeting>', blockStart);
+              const block = raw.slice(blockStart, blockEnd > -1 ? blockEnd : blockStart + 5000);
+              const summaryMatch = block.match(/<ai_summary>([\s\S]*?)<\/ai_summary>/);
+              const noteMatch = block.match(/<notes>([\s\S]*?)<\/notes>/);
+              const transcriptMatch = block.match(/<transcript>([\s\S]*?)<\/transcript>/);
+              if (summaryMatch) m.ai_summary = summaryMatch[1].trim();
+              if (noteMatch) m.ai_summary = m.ai_summary || noteMatch[1].trim();
+              if (transcriptMatch) m.transcript = transcriptMatch[1].trim();
+            }
+          });
+        }
+      } catch (detailErr) {
+        debug(`fetchMeetingDetails error: ${detailErr.message}`, 'warn');
+      }
+
+      return meetings;
+    };
+
+    // Fetch non-complete epics for the selected board — separate query because
+    // epics are often older and wouldn't show up in the 30-day `active issues`
+    // fetch. Used to populate the Epic dropdown on new tickets and to give the
+    // AI a chance to suggest a parent epic.
+    const fetchJiraEpics = async () => {
+      if (!state.selectedBoard || !state.selectedBoard.projectKey) {
+        state.jiraEpics = [];
+        return [];
+      }
+      try {
+        const result = await callMcpTool('mcp__MCP_ZAPIER__jira_software_cloud_find_issues_via_jql', {
+          jql: `project = ${state.selectedBoard.projectKey} AND issuetype = Epic AND status != Done ORDER BY updated DESC`,
+          instructions: `Find all non-Done Epics in project ${state.selectedBoard.projectKey}.`,
+          output_hint: 'For each epic return: issue key, summary title, and current status',
+          maxResults: 50
+        });
+        const raw = extractText(result);
+        let epics = [];
+        try {
+          const parsed = JSON.parse(raw);
+          epics = Array.isArray(parsed) ? parsed : parsed.results || parsed.issues || [];
+        } catch {
+          if (result && result.structuredContent) {
+            if (Array.isArray(result.structuredContent)) epics = result.structuredContent;
+            else epics = result.structuredContent.results || result.structuredContent.issues || [];
+          }
+        }
+        state.jiraEpics = epics.map(e => ({
+          key: e.issue_key || e.key || '',
+          summary: e.summary || e.title || '',
+          status: e.status || 'Unknown'
+        })).filter(e => e.key);
+        debug(`JIRA epics: found ${state.jiraEpics.length}`, 'success');
+        return state.jiraEpics;
+      } catch (err) {
+        debug(`Epic fetch failed: ${err.message}`, 'warn');
+        state.jiraEpics = [];
+        return [];
+      }
+    };
+
+    const fetchJiraBoard = async () => {
+      updatePhase('jira');
+      // If no board is selected yet (fresh load, empty persisted config),
+      // skip cleanly instead of crashing on state.selectedBoard.projectKey.
+      if (!state.selectedBoard || !state.selectedBoard.projectKey) {
+        debug('fetchJiraBoard: no board selected yet — skipping fetch.', 'info');
+        updatePhase('jira', true);
+        return [];
+      }
+      try {
+        const result = await callMcpTool('mcp__MCP_ZAPIER__jira_software_cloud_find_issues_via_jql', {
+          jql: `project = ${state.selectedBoard.projectKey} AND status != Done AND updated >= -30d ORDER BY updated DESC`,
+          instructions: `Find all active issues in project ${state.selectedBoard.projectKey} that are not Done and were updated in the last 30 days.`,
+          // Ask for accountId and email too — needed to assign new tickets to
+          // the right Jira user when create_issue runs later (display names
+          // alone are ambiguous for Zapier's resolver).
+          output_hint: 'For each issue return: issue key, summary title, current status, assignee display name, assignee account id, assignee email, issue type, priority, labels, and the first 200 characters of the description',
+          maxResults: 50
+        });
+
+        const raw = extractText(result);
+        let issues = [];
+
+        try {
+          const parsed = JSON.parse(raw);
+          issues = Array.isArray(parsed) ? parsed : parsed.results || parsed.issues || [];
+        } catch {
+          // Try to extract from structured content
+          if (result && result.structuredContent) {
+            if (Array.isArray(result.structuredContent)) issues = result.structuredContent;
+            else issues = result.structuredContent.results || result.structuredContent.issues || [];
+          }
+        }
+
+        state.jiraIssues = issues.map(issue => ({
+          key: issue.issue_key || issue.key || '',
+          summary: issue.summary || issue.title || '',
+          status: issue.status || 'Unknown',
+          assignee: issue.assignee || issue.assignee_display_name || null,
+          assigneeAccountId: issue.assignee_account_id || issue.assigneeAccountId || issue.accountId || null,
+          assigneeEmail: issue.assignee_email || issue.assigneeEmail || issue.email || null,
+          type: issue.issue_type || issue.type || 'Task',
+          priority: issue.priority || 'Medium',
+          labels: issue.labels || [],
+          description: issue.description || ''
+        }));
+
+        // Build boardAssignees with ticket counts plus the best available
+        // identifier (accountId > email > displayName) for later create_issue calls.
+        const assigneeMap = new Map();
+        state.jiraIssues.forEach(i => {
+          if (!i.assignee) return;
+          const existing = assigneeMap.get(i.assignee);
+          if (existing) {
+            existing.ticketCount++;
+            existing.accountId = existing.accountId || i.assigneeAccountId || null;
+            existing.email = existing.email || i.assigneeEmail || null;
+          } else {
+            assigneeMap.set(i.assignee, {
+              displayName: i.assignee,
+              accountId: i.assigneeAccountId || null,
+              email: i.assigneeEmail || null,
+              ticketCount: 1,
+              source: 'board'
+            });
+          }
+        });
+        state.boardAssignees = Array.from(assigneeMap.values())
+          .sort((a, b) => b.ticketCount - a.ticketCount);
+
+        debug(`JIRA: found ${state.jiraIssues.length} issues, ${state.boardAssignees.length} assignees`, 'success');
+        updatePhase('jira', true);
+        return state.jiraIssues;
+      } catch (err) {
+        debug(`JIRA fetch failed: ${err.message}`, 'error');
+        state.jiraIssues = [];
+        updatePhase('jira', true);
+        return [];
+      }
+    };
+
+    const analyzeWithAI = async () => {
+      try {
+        if (state.meetings.length === 0) return {};
+
+        const boardAssignees = [...new Set(state.jiraIssues.map(i => i.assignee).filter(Boolean))];
+        const boardLabels = [...new Set(state.jiraIssues.flatMap(i => i.labels || []))];
+        const epicsForPrompt = (state.jiraEpics || []).map(e => `${e.key}: ${e.summary}`);
+
+        debug(`AI Analysis: ${state.meetings.length} meetings, ${state.jiraIssues.length} JIRA issues, ${state.jiraEpics.length} epics`);
+
+        const commentGuidance = (state.commentPromptOverride && state.commentPromptOverride.trim()) || DEFAULT_COMMENT_PROMPT;
+        const slackGuidance = (state.slackPromptOverride && state.slackPromptOverride.trim()) || DEFAULT_SLACK_PROMPT;
+
+        const prompt = `You are a PM assistant for the ${state.selectedBoard.projectName} team at ASU. Your writing voice is conversational, direct, and practical — friendly but not casual.
+
+Given meeting notes and a JIRA board state for project ${state.selectedBoard.projectKey}, generate proposals:
+
+1. **Ticket Updates**: For each existing ticket that was clearly discussed in the meetings, propose a comment capturing what was discussed or decided. Match by keyword overlap between meeting content and ticket summaries, or explicit ticket key mentions. ${commentGuidance}
+
+2. **New Tickets**: For action items, bugs, or features that don't map to existing tickets. Set type (Story/Task/Bug), priority (infer from urgency), labels (use existing board labels when they fit: ${boardLabels.join(', ')}). Infer assignee from meeting context if clear; use null if not. Known board members: ${boardAssignees.join(', ')}. When writing the description, apply the same voice and substance guidance as existing-ticket comments: ${commentGuidance}
+
+   **Parent Epic**: Pick the single best-fitting parent epic from the list below, or null if none clearly apply. Judge by thematic/domain overlap between the new ticket's purpose and the epic's summary — don't force a match. Return only an epic key that appears in this list; never invent one.
+   Available epics:
+${epicsForPrompt.length > 0 ? epicsForPrompt.map(e => `   - ${e}`).join('\n') : '   (none — leave epicKey null)'}
+
+3. **Slack Summary**: ${slackGuidance}
+
+Return ONLY valid JSON (no markdown fences) matching this schema:
+{
+  "ticketUpdates": [{"ticketKey": "SPLT-123", "ticketSummary": "existing title", "currentStatus": "In Progress", "currentAssignee": "Name or null", "proposedComment": "detailed comment about what was discussed/decided", "approved": true}],
+  "newTickets": [{"title": "clear action title", "description": "what needs to happen and why", "type": "Story", "priority": "Medium", "labels": [], "assignee": "Name or null", "epicKey": "SPLT-123 or null", "approved": true}],
+  "slackSummary": "conversational team update..."
+}
+
+If no tickets match or no clear action items exist, return empty arrays. Do NOT fabricate ticket keys, people, or epic keys — only use real values from the data provided.`;
+
+        const data = [
+          {
+            type: 'meetings',
+            data: state.meetings.map(m => ({
+              title: m.title,
+              date: m.date,
+              summary: m.ai_summary || m.summary || '',
+              transcript: m.transcript || '',
+              participants: m.participants
+            }))
+          },
+          {
+            type: 'jiraBoard',
+            projectKey: state.selectedBoard.projectKey,
+            projectName: state.selectedBoard.projectName,
+            issues: state.jiraIssues.map(i => ({
+              key: i.key, summary: i.summary, status: i.status,
+              assignee: i.assignee, type: i.type, priority: i.priority,
+              labels: i.labels, description: (i.description || '').slice(0, 200)
+            }))
+          }
+        ];
+
+        const result = await sampleAI(prompt, data);
+        let proposals = {};
+
+        if (result.text) {
+          try {
+            let jsonStr = result.text.trim();
+            if (jsonStr.startsWith('```')) {
+              jsonStr = jsonStr.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+            }
+            proposals = JSON.parse(jsonStr);
+            debug(`AI proposals: ${(proposals.ticketUpdates||[]).length} updates, ${(proposals.newTickets||[]).length} new tickets`, 'success');
+          } catch (e) {
+            debug(`Failed to parse AI JSON: ${e.message}`, 'error');
+            debug(`AI text: ${result.text.slice(0, 200)}`, 'error');
+            proposals = { ticketUpdates: [], newTickets: [], slackSummary: '' };
+          }
+        }
+
+        state.proposals = proposals;
+        state.approvals = {};
+
+        (proposals.ticketUpdates || []).forEach((tu, idx) => {
+          state.approvals[`update-${idx}`] = tu.approved !== false;
+        });
+        (proposals.newTickets || []).forEach((nt, idx) => {
+          state.approvals[`new-${idx}`] = nt.approved !== false;
+        });
+
+        return proposals;
+      } catch (err) {
+        debug(`AI Analysis Error: ${err.message}`, 'error');
+        state.proposals = { ticketUpdates: [], newTickets: [], slackSummary: '' };
+        return state.proposals;
+      }
+    };
+
+    // ============================================
+    // Selection Screen Rendering
+    // ============================================
+    const updateSelectionSubtitle = () => {
+      const boardDisplay = document.getElementById('selectionBoardDisplay');
+      if (!boardDisplay) return;
+      if (state.selectedBoard) {
+        boardDisplay.textContent = `${state.selectedBoard.projectName} \u2022 Project ${state.selectedBoard.projectKey}`;
+      } else {
+        boardDisplay.textContent = 'No board selected';
+      }
+    };
+
+    const renderBoardPicker = () => {
+      const container = document.getElementById('boardControls');
+      container.innerHTML = '';
+      updateSelectionSubtitle();
+
+      // Add saved board pills
+      state.savedBoards.forEach(board => {
+        const pill = document.createElement('button');
+        pill.className = `board-pill ${state.selectedBoard && state.selectedBoard.projectKey === board.projectKey ? 'active' : ''}`;
+        pill.innerHTML = `
+          <div class="board-pill-name">${escapeHtml(board.projectName)}</div>
+          <div class="board-pill-key">${escapeHtml(board.projectKey)}</div>
+        `;
+        pill.addEventListener('click', () => {
+          state.selectedBoard = board;
+          renderBoardPicker();
+          updateSelectionCounts();
+          updateSelectionSubtitle();
+        });
+        container.appendChild(pill);
+      });
+
+      // Add "+ Add Board" button
+      const addBtn = document.createElement('button');
+      addBtn.className = 'button button-secondary button-small';
+      addBtn.textContent = '+ Add Board';
+      addBtn.addEventListener('click', () => {
+        const searchContainer = document.getElementById('boardSearchContainer');
+        searchContainer.classList.toggle('visible');
+      });
+      container.appendChild(addBtn);
+    };
+
+    const parseProjectResult = (result) => {
+      const raw = extractText(result);
+      let projects = [];
+
+      // Prefer structuredContent when present — it preserves real types and avoids brittle string parsing.
+      if (result && result.structuredContent && typeof result.structuredContent === 'object') {
+        const sc = result.structuredContent;
+        if (sc.results && typeof sc.results === 'object' && !Array.isArray(sc.results)) {
+          // Single result object
+          const r = sc.results;
+          if (r.project_key || r.projectKey || r.key || r.project_name || r.projectName || r.name) {
+            projects = [r];
+          }
+        } else if (Array.isArray(sc.results)) {
+          projects = sc.results;
+        } else if (Array.isArray(sc)) {
+          projects = sc;
+        }
+      }
+
+      if (projects.length === 0) {
+        try {
+          const parsed = JSON.parse(raw);
+          // Observed Zapier Jira shapes:
+          //   Match (single):  { results: { project_key, project_name, project_id } }
+          //   No match:        { results: [] }
+          //   Possible array:  { results: [ {...}, {...} ] }
+          //   Raw array:       [ {...} ]
+          if (parsed.results && typeof parsed.results === 'object' && !Array.isArray(parsed.results)) {
+            const r = parsed.results;
+            if (r.project_key || r.projectKey || r.key || r.project_name || r.projectName || r.name) {
+              projects = [r];
+            }
+            // else results is empty object — no match
+          } else if (Array.isArray(parsed)) {
+            projects = parsed;
+          } else if (parsed.results && Array.isArray(parsed.results)) {
+            projects = parsed.results;
+          }
+        } catch {
+          // Regex fallback — include snake_case variants (project_key / project_name)
+          const keyMatches = [...raw.matchAll(/"(?:project_key|projectKey|key)"\s*:\s*"([A-Z0-9]+)"/gi)];
+          const nameMatches = [...raw.matchAll(/"(?:project_name|projectName|name)"\s*:\s*"([^"]+)"/gi)];
+          for (let i = 0; i < Math.min(keyMatches.length, nameMatches.length); i++) {
+            projects.push({ project_key: keyMatches[i][1], project_name: nameMatches[i][1] });
+          }
+        }
+      }
+
+      const normalized = projects.map(p => ({
+        projectKey: p.project_key || p.projectKey || p.key || '',
+        projectName: p.project_name || p.projectName || p.name || '',
+        // Jira project id — Zapier's create_issue requires this (not the key)
+        // because the key gets validated against a limited dropdown allowlist.
+        projectId: String(p.id || p.projectId || p.project_id || ''),
+        baseUrl: state.selectedBoard ? state.selectedBoard.baseUrl : 'https://asudev.jira.com'
+      })).filter(p => p.projectKey && p.projectName);
+
+      debug(`parseProjectResult: parsed ${projects.length} raw, ${normalized.length} normalized`, normalized.length > 0 ? 'success' : 'warn');
+      return normalized;
+    };
+
+    const searchJiraProjects = async (query) => {
+      debug(`Searching JIRA projects: "${query}"`);
+      const q = query.trim();
+      if (!q) return [];
+
+      try {
+        // The Zapier JIRA connector only supports exact-match for both key and name.
+        // Key search is case-insensitive and most reliable, so ALWAYS try it first.
+        // Name search requires the full exact project name (e.g. "EdPlus: Split Studio").
+        //
+        // Strategy 1: key search (uppercased) — works for "splt", "SPLT", "Splt"
+        // Strategy 2: exact name search — works for "EdPlus: Split Studio"
+        // Strategy 3: key search with just letters (strip non-alphanumeric) — handles "split studio" -> "SPLITSTUDIO" (unlikely but safe)
+
+        // Strategy 1: Try as key (always, regardless of format)
+        const keyQuery = q.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (keyQuery.length >= 2 && keyQuery.length <= 10) {
+          debug(`Strategy 1: key search with "${keyQuery}"`, 'info');
+          try {
+            const result = await callMcpTool('mcp__MCP_ZAPIER__jira_software_cloud_find_project', {
+              instructions: `Find project with key "${keyQuery}"`,
+              searchByParameter: 'key',
+              output_hint: 'Return the project key, project name, and project id'
+            });
+            const projects = parseProjectResult(result);
+            if (projects.length > 0) {
+              debug(`Found ${projects.length} project(s) via key search`, 'success');
+              return projects;
+            }
+          } catch (e) {
+            debug(`Key search failed: ${e.message}`, 'warn');
+          }
+        }
+
+        // Strategy 2: Try exact name match
+        debug(`Strategy 2: exact name search with "${q}"`, 'info');
+        try {
+          const result = await callMcpTool('mcp__MCP_ZAPIER__jira_software_cloud_find_project', {
+            instructions: `Find project named "${q}"`,
+            searchByParameter: 'name',
+            output_hint: 'Return the project key, project name, and project id'
+          });
+          const projects = parseProjectResult(result);
+          if (projects.length > 0) {
+            debug(`Found ${projects.length} project(s) via name search`, 'success');
+            return projects;
+          }
+        } catch (e) {
+          debug(`Name search failed: ${e.message}`, 'warn');
+        }
+
+        // Strategy 3: If query has spaces or special chars, try extracting possible abbreviation
+        // e.g. "Split Studio" -> try "SS", "split" -> already tried "SPLIT"
+        if (q.includes(' ')) {
+          const initials = q.split(/\s+/).map(w => w[0]).join('').toUpperCase();
+          if (initials.length >= 2 && initials !== keyQuery) {
+            debug(`Strategy 3: initials key search with "${initials}"`, 'info');
+            try {
+              const result = await callMcpTool('mcp__MCP_ZAPIER__jira_software_cloud_find_project', {
+                instructions: `Find project with key "${initials}"`,
+                searchByParameter: 'key',
+                output_hint: 'Return the project key, project name, and project id'
+              });
+              const projects = parseProjectResult(result);
+              if (projects.length > 0) {
+                debug(`Found ${projects.length} project(s) via initials key search`, 'success');
+                return projects;
+              }
+            } catch (e) {
+              debug(`Initials search failed: ${e.message}`, 'warn');
+            }
+          }
+        }
+
+        debug('No projects found with any search strategy. Note: partial name search is not supported — use the exact project key (e.g. "SPLT") or full project name.', 'warn');
+        return [];
+      } catch (err) {
+        debug(`JIRA project search error: ${err.message}`, 'error');
+        return [];
+      }
+    };
+
+    const renderSelectionScreen = () => {
+      renderBoardPicker();
+      renderMeetingsList();
+      attachSelectionEventListeners();
+    };
+
+    const renderMeetingsList = () => {
+      const container = document.getElementById('meetingsList');
+      container.innerHTML = '';
+
+      const noMsg = document.getElementById('noMeetingsMsg');
+      if (state.allFetchedMeetings.length === 0) {
+        noMsg.classList.remove('hidden');
+      } else {
+        noMsg.classList.add('hidden');
+      }
+
+      state.allFetchedMeetings.forEach((meeting) => {
+        const card = document.createElement('div');
+        card.className = 'meeting-card';
+        const isSelected = state.selectedMeetingIds.has(meeting.id);
+        const participantCount = Array.isArray(meeting.participants) ? meeting.participants.length : 0;
+        card.innerHTML = `
+          <input type="checkbox" data-meeting-id="${escapeHtml(meeting.id)}" ${isSelected ? 'checked' : ''}>
+          <div class="meeting-card-content">
+            <div class="meeting-card-title">${escapeHtml(meeting.title)}</div>
+            <div class="meeting-card-meta">
+              <span>${formatDate(meeting.date)}</span>
+              <span>${participantCount} participant${participantCount !== 1 ? 's' : ''}</span>
+            </div>
+          </div>
+        `;
+
+        // Click on card toggles checkbox
+        card.addEventListener('click', (e) => {
+          if (e.target.type === 'checkbox') return;
+          const cb = card.querySelector('input[type="checkbox"]');
+          cb.checked = !cb.checked;
+          cb.dispatchEvent(new Event('change'));
+        });
+
+        container.appendChild(card);
+      });
+
+      updateSelectionCounts();
+    };
+
+    const updateSelectionCounts = () => {
+      const total = state.allFetchedMeetings.length;
+      const selected = state.selectedMeetingIds.size;
+      document.getElementById('selectedCount').textContent = selected;
+      document.getElementById('totalCount').textContent = total;
+      document.getElementById('analyzeButton').disabled = selected === 0 || !state.selectedBoard;
+
+      const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+      selectAllCheckbox.indeterminate = selected > 0 && selected < total;
+      selectAllCheckbox.checked = selected === total && total > 0;
+    };
+
+    const attachSelectionEventListeners = () => {
+      // Board search
+      const boardSearchBtn = document.getElementById('boardSearchBtn');
+      const boardSearchInput = document.getElementById('boardSearchInput');
+      const boardResults = document.getElementById('boardResults');
+
+      if (boardSearchBtn) {
+        boardSearchBtn.addEventListener('click', async () => {
+          const query = boardSearchInput.value.trim();
+          if (!query) return;
+
+          boardResults.innerHTML = '<div style="text-align:center;padding:0.5rem;color:var(--text-secondary)"><div class="mini-spinner" style="margin:0 auto 0.5rem"></div>Searching...</div>';
+          const projects = await searchJiraProjects(query);
+
+          if (projects.length === 0) {
+            boardResults.innerHTML = '<div style="padding:0.5rem;color:var(--text-tertiary);font-size:0.85rem;">No projects found. Try the exact project key (e.g. SPLT) or full project name.</div>';
+            return;
+          }
+
+          boardResults.innerHTML = '';
+          projects.forEach(project => {
+            const item = document.createElement('div');
+            item.className = 'board-result-item';
+            item.innerHTML = `
+              <div>
+                <div class="board-result-name">${escapeHtml(project.projectName)}</div>
+                <div class="board-result-key">${escapeHtml(project.projectKey)}</div>
+              </div>
+            `;
+            item.addEventListener('click', () => {
+              // Add to saved boards if not already there
+              const existing = state.savedBoards.find(b => b.projectKey === project.projectKey);
+              if (!existing) {
+                state.savedBoards.push(project);
+                persistConfig(); // Auto-save to artifact
+              }
+              state.selectedBoard = project;
+              document.getElementById('boardSearchContainer').classList.remove('visible');
+              boardSearchInput.value = '';
+              boardResults.innerHTML = '';
+              renderBoardPicker();
+              updateSelectionCounts();
+              updateSelectionSubtitle();
+            });
+            boardResults.appendChild(item);
+          });
+        });
+
+        boardSearchInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') boardSearchBtn.click();
+        });
+      }
+
+      // Time range pills
+      document.querySelectorAll('.time-range-pill').forEach(pill => {
+        pill.addEventListener('click', async () => {
+          document.querySelectorAll('.time-range-pill').forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          state.currentTimeRange = pill.dataset.range;
+          state.selectedMeetingIds.clear();
+
+          // Show loading briefly
+          const container = document.getElementById('meetingsList');
+          container.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary)"><div class="mini-spinner" style="margin:0 auto 1rem"></div>Loading meetings...</div>';
+          document.getElementById('noMeetingsMsg').classList.add('hidden');
+
+          const meetings = await listMeetings(state.currentTimeRange);
+          state.allFetchedMeetings = meetings;
+          renderMeetingsList();
+          // Re-attach checkbox listeners for new cards
+          attachCheckboxListeners();
+        });
+      });
+
+      attachCheckboxListeners();
+
+      // Select all checkbox
+      const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+      selectAllCheckbox.addEventListener('change', () => {
+        if (selectAllCheckbox.checked) {
+          state.allFetchedMeetings.forEach(m => state.selectedMeetingIds.add(m.id));
+        } else {
+          state.selectedMeetingIds.clear();
+        }
+        renderMeetingsList();
+        attachCheckboxListeners();
+      });
+
+      // Analyze button
+      document.getElementById('analyzeButton').addEventListener('click', async () => {
+        if (!state.selectedBoard) {
+          alert('Please select a JIRA board first.');
+          return;
+        }
+
+        state.meetings = state.allFetchedMeetings.filter(m => state.selectedMeetingIds.has(m.id));
+        debug(`Analyzing ${state.meetings.length} selected meetings`);
+
+        // Show full-screen analysis loading immediately (before swapping containers)
+        showAnalysisLoading();
+        showMain();
+
+        // Re-fetch JIRA board only if user changed the board since startup
+        if (state.selectedBoard.projectKey !== state._lastFetchedBoardKey) {
+          debug(`Board changed from ${state._lastFetchedBoardKey} to ${state.selectedBoard.projectKey}, re-fetching JIRA...`);
+          await Promise.all([fetchJiraBoard(), fetchJiraEpics()]);
+          state._lastFetchedBoardKey = state.selectedBoard.projectKey;
+        }
+        updateAnalysisPhase('board', true);
+
+        state.meetings = await fetchMeetingDetails(state.meetings);
+
+        // Merge meeting participants into boardAssignees
+        const existingNames = new Set(state.boardAssignees.map(a => a.displayName.toLowerCase()));
+        state.meetings.forEach(m => {
+          (m.participants || []).forEach(p => {
+            // Participant might be a string like "Name (role) from Org <email>" or just a name
+            const name = typeof p === 'string' ? p.split(/\s*[\(<]/).shift().trim() : (p.displayName || p.name || '');
+            if (name && !existingNames.has(name.toLowerCase())) {
+              existingNames.add(name.toLowerCase());
+              state.boardAssignees.push({ displayName: name, ticketCount: 0, source: 'meeting' });
+            }
+          });
+        });
+        updateAnalysisPhase('details', true);
+
+        await analyzeWithAI();
+        updateAnalysisPhase('ai', true);
+        hideAnalysisLoading();
+
+        // Update header: meeting title(s) become the page title; metadata stays below
+        const titleEl = document.getElementById('analysisHeaderTitle');
+        if (titleEl) titleEl.textContent = buildAnalysisHeaderTitle(state.meetings);
+        document.getElementById('boardDisplayName').textContent = state.selectedBoard.projectName;
+        document.getElementById('boardDisplayKey').textContent = state.selectedBoard.projectKey;
+
+        renderMeetingTabs();
+        renderMeetingContent();
+        updateApprovalCount();
+      });
+
+      // Prompt tone editors (Slack + JIRA comments)
+      const promptEditors = [
+        { key: 'slack', stateKey: 'slackPromptOverride', inputId: 'slackPromptInput', resetId: 'slackPromptReset', defaultText: DEFAULT_SLACK_PROMPT },
+        { key: 'comment', stateKey: 'commentPromptOverride', inputId: 'commentPromptInput', resetId: 'commentPromptReset', defaultText: DEFAULT_COMMENT_PROMPT }
+      ];
+      promptEditors.forEach(cfg => {
+        const input = document.getElementById(cfg.inputId);
+        const resetBtn = document.getElementById(cfg.resetId);
+        if (!input) return;
+        // Initialize with override if present, else show default as placeholder-friendly prefilled value
+        input.value = state[cfg.stateKey] || '';
+        input.placeholder = cfg.defaultText;
+        input.addEventListener('input', () => {
+          state[cfg.stateKey] = input.value;
+          persistConfig();
+        });
+        if (resetBtn) {
+          resetBtn.addEventListener('click', () => {
+            input.value = '';
+            state[cfg.stateKey] = '';
+            persistConfig();
+          });
+        }
+      });
+      document.querySelectorAll('[data-prompt-toggle]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          btn.closest('.prompt-section').classList.toggle('open');
+        });
+      });
+    };
+
+    const attachCheckboxListeners = () => {
+      document.querySelectorAll('#meetingsList [data-meeting-id]').forEach(checkbox => {
+        checkbox.addEventListener('change', () => {
+          const meetingId = checkbox.dataset.meetingId;
+          if (checkbox.checked) {
+            state.selectedMeetingIds.add(meetingId);
+          } else {
+            state.selectedMeetingIds.delete(meetingId);
+          }
+          updateSelectionCounts();
+        });
+      });
+    };
+
+    // ============================================
+    // UI Rendering — Dashboard
+    // ============================================
+    const renderMeetingTabs = () => {
+      const container = document.getElementById('meetingTabs');
+      container.innerHTML = '';
+      // When a single meeting is selected, the title already appears in the page header —
+      // hide the tab strip to avoid a redundant label right before the Slack update.
+      if (state.meetings.length <= 1) {
+        container.style.display = 'none';
+        return;
+      }
+      container.style.display = '';
+      state.meetings.forEach((meeting, idx) => {
+        const tab = document.createElement('button');
+        tab.className = `meeting-tab ${idx === 0 ? 'active' : ''}`;
+        tab.textContent = meeting.title;
+        tab.onclick = () => selectMeeting(idx);
+        container.appendChild(tab);
+      });
+    };
+
+    const selectMeeting = (idx) => {
+      document.querySelectorAll('.meeting-tab').forEach((tab, i) => {
+        tab.classList.toggle('active', i === idx);
+      });
+      document.querySelectorAll('.meeting-content').forEach((content, i) => {
+        content.classList.toggle('active', i === idx);
+      });
+      updateApprovalCount();
+    };
+
+    const renderMeetingContent = () => {
+      const container = document.getElementById('meetingContents');
+      container.innerHTML = '';
+
+      state.meetings.forEach((meeting, meetingIdx) => {
+        const content = document.createElement('div');
+        content.className = `meeting-content ${meetingIdx === 0 ? 'active' : ''}`;
+
+        const proposals = state.proposals;
+        const slackSummary = proposals.slackSummary || '';
+        const ticketUpdates = proposals.ticketUpdates || [];
+        const newTickets = proposals.newTickets || [];
+
+        content.innerHTML = `
+          <!-- Slack Update Section -->
+          <div class="section">
+            <div class="section-header">
+              <span class="section-toggle">\u25BC</span>
+              <span class="section-title">Slack Update</span>
+            </div>
+            <div class="section-body">
+              <div class="card">
+                ${getChannelSelectorHtml()}
+                <div class="form-group">
+                  <label class="form-label">Summary</label>
+                  <textarea class="form-textarea slack-summary" placeholder="AI-generated summary will appear here...">${escapeHtml(slackSummary)}</textarea>
+                </div>
+                <div class="slack-controls">
+                  <button type="button" class="button button-secondary button-small copy-slack-btn">Copy to Clipboard</button>
+                  <button type="button" class="button button-primary button-small send-slack-btn">Send to Slack</button>
+                </div>
+                <div class="slack-status" style="margin-top:0.5rem;font-size:0.85rem;color:var(--text-secondary);display:none;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Existing Ticket Updates -->
+          ${ticketUpdates.length > 0 ? `
+            <div class="section">
+              <div class="section-header">
+                <span class="section-toggle">\u25BC</span>
+                <span class="section-title">Existing Ticket Updates (${ticketUpdates.length})</span>
+              </div>
+              <div class="section-body">
+                ${ticketUpdates.map((tu, idx) => `
+                  <div class="card">
+                    <div class="card-header">
+                      <div class="card-header-main">
+                        <div class="card-title-row">
+                          <a href="${state.selectedBoard.baseUrl}/browse/${escapeHtml(tu.ticketKey)}" target="_blank" rel="noopener noreferrer" class="badge badge-ticket" data-external-link>${escapeHtml(tu.ticketKey)}</a>
+                          <a href="${state.selectedBoard.baseUrl}/browse/${escapeHtml(tu.ticketKey)}" target="_blank" rel="noopener noreferrer" class="card-title-link" data-external-link>${escapeHtml(tu.ticketSummary)}</a>
+                        </div>
+                        <div class="card-meta-row">
+                          <span class="badge badge-status">${escapeHtml(tu.currentStatus)}</span>
+                          <span class="meta-divider">&bull;</span>
+                          <span class="assignee-chip">${escapeHtml(tu.currentAssignee || 'Unassigned')}</span>
+                        </div>
+                      </div>
+                      <div class="card-toggle">
+                        <div class="toggle ${state.approvals[`update-${idx}`] ? 'active' : ''}" data-toggle-key="update-${idx}"></div>
+                        <label class="toggle-label">Approve</label>
+                      </div>
+                    </div>
+                    <div class="form-group" style="margin-top: 0.875rem;">
+                      <label class="form-label">Proposed Comment</label>
+                      <textarea class="form-textarea update-comment" data-update-idx="${idx}">${escapeHtml(tu.proposedComment)}</textarea>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- New Tickets -->
+          ${newTickets.length > 0 ? `
+            <div class="section">
+              <div class="section-header">
+                <span class="section-toggle">\u25BC</span>
+                <span class="section-title">New Tickets (${newTickets.length})</span>
+              </div>
+              <div class="section-body">
+                ${(() => {
+                  const boardLabels = [...new Set(state.jiraIssues.flatMap(i => i.labels || []))].sort();
+                  return newTickets.map((nt, idx) => {
+                    const selectedLabels = Array.isArray(nt.labels) ? nt.labels : [];
+                    return `
+                  <div class="card">
+                    <div class="card-header">
+                      <div class="card-header-main">
+                        <div class="card-title-row">
+                          <span class="badge" style="background: var(--green-light); color: var(--green);">NEW</span>
+                          <input type="text" class="form-input new-title card-title-input" data-new-idx="${idx}" value="${escapeHtml(nt.title)}" style="flex: 1; min-width: 200px; font-size: 1rem; font-weight: 600; padding: 0.4rem 0.6rem;">
+                        </div>
+                      </div>
+                      <div class="card-toggle">
+                        <div class="toggle ${state.approvals[`new-${idx}`] ? 'active' : ''}" data-toggle-key="new-${idx}"></div>
+                        <label class="toggle-label">Create</label>
+                      </div>
+                    </div>
+
+                    <div class="row-2col" style="margin-top: 0.875rem;">
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">Type / Priority</label>
+                        <div style="display: flex; gap: 0.5rem;">
+                          <select class="form-select new-type" data-new-idx="${idx}" style="flex: 1;">
+                            <option value="Story" ${nt.type === 'Story' ? 'selected' : ''}>Story</option>
+                            <option value="Task" ${nt.type === 'Task' ? 'selected' : ''}>Task</option>
+                            <option value="Bug" ${nt.type === 'Bug' ? 'selected' : ''}>Bug</option>
+                            <option value="Sub-task" ${nt.type === 'Sub-task' ? 'selected' : ''}>Sub-task</option>
+                            <option value="Epic" ${nt.type === 'Epic' ? 'selected' : ''}>Epic</option>
+                          </select>
+                          <select class="form-select new-priority" data-new-idx="${idx}" style="flex: 1;">
+                            <option value="Highest" ${nt.priority === 'Highest' ? 'selected' : ''}>Highest</option>
+                            <option value="High" ${nt.priority === 'High' ? 'selected' : ''}>High</option>
+                            <option value="Medium" ${nt.priority === 'Medium' ? 'selected' : ''}>Medium</option>
+                            <option value="Low" ${nt.priority === 'Low' ? 'selected' : ''}>Low</option>
+                            <option value="Lowest" ${nt.priority === 'Lowest' ? 'selected' : ''}>Lowest</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">Labels</label>
+                        <div class="label-picker" data-label-picker-idx="${idx}">
+                          <div class="label-chips" data-label-chips>
+                            ${selectedLabels.length === 0
+                              ? '<span class="label-chips-empty">No labels selected</span>'
+                              : selectedLabels.map(l => `
+                                <span class="label-chip" data-label="${escapeHtml(l)}">
+                                  ${escapeHtml(l)}
+                                  <span class="label-chip-remove" data-remove-label="${escapeHtml(l)}">&times;</span>
+                                </span>
+                              `).join('')}
+                            <button type="button" class="label-add-btn" data-label-add-btn aria-label="Add label" title="Add label">+</button>
+                          </div>
+                          <div class="label-dropdown" data-label-dropdown>
+                            ${boardLabels.length > 0
+                              ? boardLabels.map(l => `
+                                  <div class="label-dropdown-option ${selectedLabels.includes(l) ? 'selected' : ''}" data-toggle-label="${escapeHtml(l)}">${escapeHtml(l)}</div>
+                                `).join('')
+                              : '<div class="label-dropdown-empty">No board labels yet</div>'}
+                            <div class="label-dropdown-divider"></div>
+                            <div class="label-dropdown-custom">
+                              <input type="text" data-label-custom placeholder="Add custom label, press Enter">
+                            </div>
+                          </div>
+                          <input type="hidden" class="new-labels" data-new-idx="${idx}" value="${escapeHtml(selectedLabels.join(','))}">
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.875rem;">
+                      <label class="form-label">Description</label>
+                      <textarea class="form-textarea new-description" data-new-idx="${idx}">${escapeHtml(nt.description)}</textarea>
+                    </div>
+
+                    <div class="row-2col" style="margin-top: 0.875rem;">
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">Assignee</label>
+                        <select class="form-select new-assignee" data-new-idx="${idx}">
+                          ${(() => {
+                            const opts = getAssigneeOptions();
+                            if (nt.assignee) {
+                              return opts.replace(
+                                `value="${escapeHtml(nt.assignee)}"`,
+                                `value="${escapeHtml(nt.assignee)}" selected`
+                              );
+                            }
+                            return opts;
+                          })()}
+                        </select>
+                      </div>
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">Parent Epic</label>
+                        <select class="form-select new-epic" data-new-idx="${idx}">
+                          <option value="">No epic</option>
+                          ${(state.jiraEpics || []).map(e => `
+                            <option value="${escapeHtml(e.key)}" ${nt.epicKey === e.key ? 'selected' : ''}>${escapeHtml(e.key)} — ${escapeHtml(e.summary)}</option>
+                          `).join('')}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                `;
+                  }).join('');
+                })()}
+              </div>
+            </div>
+          ` : ''}
+
+          ${ticketUpdates.length === 0 && newTickets.length === 0 ? `
+            <div class="empty-state">
+              <div class="empty-state-icon">&#128203;</div>
+              <div class="empty-state-title">No Proposals Generated</div>
+              <div class="empty-state-message">The AI analysis didn't identify any actionable items from this meeting.</div>
+            </div>
+          ` : ''}
+        `;
+
+        container.appendChild(content);
+      });
+
+      attachDashboardEventListeners();
+    };
+
+    const attachDashboardEventListeners = () => {
+      // Section collapse/expand
+      document.querySelectorAll('.section-header').forEach(header => {
+        header.addEventListener('click', () => {
+          header.closest('.section').classList.toggle('collapsed');
+        });
+      });
+
+      // Copy Slack
+      document.querySelectorAll('.copy-slack-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const textarea = btn.closest('.card').querySelector('.slack-summary');
+          navigator.clipboard.writeText(textarea.value).then(() => {
+            const status = btn.closest('.card').querySelector('.slack-status');
+            status.style.display = 'block';
+            status.textContent = '\u2713 Copied to clipboard';
+            setTimeout(() => { status.style.display = 'none'; }, 2000);
+          });
+        });
+      });
+
+      // Send Slack
+      document.querySelectorAll('.send-slack-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          sendToSlack(btn);
+        });
+      });
+
+      // Toggle switches
+      document.querySelectorAll('[data-toggle-key]').forEach(toggle => {
+        toggle.addEventListener('click', () => {
+          const key = toggle.dataset.toggleKey;
+          toggle.classList.toggle('active');
+          state.approvals[key] = toggle.classList.contains('active');
+          updateApprovalCount();
+        });
+      });
+
+      // Label single-row pickers (chips + "+" button + dropdown)
+      document.querySelectorAll('[data-label-picker-idx]').forEach(picker => {
+        const hidden = picker.querySelector('.new-labels');
+        const chipsEl = picker.querySelector('[data-label-chips]');
+        const addBtn = picker.querySelector('[data-label-add-btn]');
+        const dropdown = picker.querySelector('[data-label-dropdown]');
+        const customInput = picker.querySelector('[data-label-custom]');
+
+        const getSelected = () => hidden.value ? hidden.value.split(',').filter(Boolean) : [];
+        const setSelected = (list) => {
+          const unique = [...new Set(list.filter(Boolean).map(l => l.trim()))];
+          hidden.value = unique.join(',');
+
+          // Rerender chips (preserving the trailing "+" add button)
+          const chipsHtml = unique.length === 0
+            ? '<span class="label-chips-empty">No labels selected</span>'
+            : unique.map(l => `
+                <span class="label-chip" data-label="${escapeHtml(l)}">
+                  ${escapeHtml(l)}
+                  <span class="label-chip-remove" data-remove-label="${escapeHtml(l)}">&times;</span>
+                </span>
+              `).join('');
+          chipsEl.innerHTML = chipsHtml + '<button type="button" class="label-add-btn" data-label-add-btn aria-label="Add label" title="Add label">+</button>';
+
+          // Re-bind the new + button
+          const newAddBtn = chipsEl.querySelector('[data-label-add-btn]');
+          if (newAddBtn) newAddBtn.addEventListener('click', toggleDropdown);
+
+          // Sync option active states in dropdown
+          dropdown.querySelectorAll('[data-toggle-label]').forEach(opt => {
+            opt.classList.toggle('selected', unique.includes(opt.dataset.toggleLabel));
+          });
+        };
+
+        const closeDropdown = () => {
+          dropdown.classList.remove('visible');
+          const btn = chipsEl.querySelector('[data-label-add-btn]');
+          if (btn) btn.classList.remove('active');
+        };
+        const toggleDropdown = () => {
+          const willOpen = !dropdown.classList.contains('visible');
+          // Close any other open dropdowns first
+          document.querySelectorAll('.label-dropdown.visible').forEach(d => d.classList.remove('visible'));
+          document.querySelectorAll('.label-add-btn.active').forEach(b => b.classList.remove('active'));
+          if (willOpen) {
+            dropdown.classList.add('visible');
+            const btn = chipsEl.querySelector('[data-label-add-btn]');
+            if (btn) btn.classList.add('active');
+            if (customInput) setTimeout(() => customInput.focus(), 50);
+          }
+        };
+
+        if (addBtn) addBtn.addEventListener('click', toggleDropdown);
+
+        // Click board-label option in dropdown -> toggle
+        dropdown.querySelectorAll('[data-toggle-label]').forEach(opt => {
+          opt.addEventListener('click', () => {
+            const label = opt.dataset.toggleLabel;
+            const current = getSelected();
+            if (current.includes(label)) {
+              setSelected(current.filter(l => l !== label));
+            } else {
+              setSelected([...current, label]);
+            }
+          });
+        });
+
+        // Click chip remove
+        chipsEl.addEventListener('click', (e) => {
+          const remove = e.target.closest('[data-remove-label]');
+          if (!remove) return;
+          const label = remove.dataset.removeLabel;
+          setSelected(getSelected().filter(l => l !== label));
+        });
+
+        // Custom label via Enter key
+        if (customInput) {
+          customInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const value = customInput.value.trim();
+              if (value) {
+                setSelected([...getSelected(), value]);
+                customInput.value = '';
+              }
+            }
+          });
+        }
+
+        // Close dropdown when clicking outside this picker
+        document.addEventListener('click', (e) => {
+          if (!picker.contains(e.target)) closeDropdown();
+        });
+      });
+
+      // Channel dropdown change
+      document.querySelectorAll('.channel-dropdown').forEach(dropdown => {
+        dropdown.addEventListener('change', () => {
+          const ch = state.slackChannels.find(c => c.id === dropdown.value);
+          if (ch) {
+            state.selectedSlackChannel = ch;
+            debug(`Selected Slack channel: #${ch.name}`, 'info');
+            // Sync all dropdowns
+            document.querySelectorAll('.channel-dropdown').forEach(d => { d.value = ch.id; });
+          }
+        });
+      });
+
+      // Add Channel button
+      document.querySelectorAll('.add-channel-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const container = btn.closest('.channel-selector').querySelector('.channel-search-container');
+          container.classList.toggle('visible');
+          if (container.classList.contains('visible')) {
+            container.querySelector('.channel-search-input').focus();
+          }
+        });
+      });
+
+      // Channel search
+      document.querySelectorAll('.channel-search-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const container = btn.closest('.channel-search-container');
+          const input = container.querySelector('.channel-search-input');
+          const resultsEl = container.querySelector('.channel-results');
+          const query = input.value.trim();
+          if (!query) return;
+
+          btn.disabled = true;
+          btn.textContent = 'Searching...';
+          resultsEl.innerHTML = '<div style="text-align:center;padding:0.5rem;color:var(--text-secondary)"><div class="mini-spinner" style="margin:0 auto"></div></div>';
+
+          const channels = await searchSlackChannels(query);
+
+          btn.disabled = false;
+          btn.textContent = 'Search';
+
+          if (channels.length === 0) {
+            resultsEl.innerHTML = '<div style="padding:0.5rem;color:var(--text-secondary);font-size:0.85rem">No channels found.</div>';
+            return;
+          }
+
+          resultsEl.innerHTML = '';
+          channels.forEach(ch => {
+            const alreadyAdded = state.slackChannels.some(c => c.id === ch.id);
+            const item = document.createElement('div');
+            item.className = 'channel-result-item';
+            item.innerHTML = `
+              <span class="channel-result-name">#${escapeHtml(ch.name)}</span>
+              <span class="channel-result-type">${alreadyAdded ? 'Added' : ch.type}</span>
+            `;
+            if (!alreadyAdded) {
+              item.addEventListener('click', () => {
+                // Add this channel to the list and select it
+                state.slackChannels.push(ch);
+                state.selectedSlackChannel = ch;
+                persistConfig(); // Auto-save to artifact
+                debug(`Added Slack channel: #${ch.name} (${ch.id})`, 'success');
+
+                // Update all channel dropdowns
+                document.querySelectorAll('.channel-dropdown').forEach(dropdown => {
+                  const opt = document.createElement('option');
+                  opt.value = ch.id;
+                  opt.textContent = `#${ch.name} (${ch.type})`;
+                  opt.selected = true;
+                  dropdown.appendChild(opt);
+                  dropdown.value = ch.id;
+                });
+
+                // Mark as added
+                item.querySelector('.channel-result-type').textContent = 'Added';
+                item.style.opacity = '0.6';
+                item.style.cursor = 'default';
+
+                // Close search
+                container.classList.remove('visible');
+              });
+            } else {
+              item.style.opacity = '0.6';
+              item.style.cursor = 'default';
+            }
+            resultsEl.appendChild(item);
+          });
+        });
+      });
+
+      // Enter key on search input
+      document.querySelectorAll('.channel-search-input').forEach(input => {
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            input.closest('.channel-search-container').querySelector('.channel-search-btn').click();
+          }
+        });
+      });
+    };
+
+    const sendToSlack = async (btn) => {
+      try {
+        const textarea = btn.closest('.card').querySelector('.slack-summary');
+        const message = textarea.value.trim();
+        if (!message) { alert('Please add a message before sending.'); return; }
+
+        // Use the channel selected in the dropdown for this card
+        const dropdown = btn.closest('.card').querySelector('.channel-dropdown');
+        const channelId = dropdown ? dropdown.value : (state.selectedSlackChannel?.id || '');
+        const channel = state.slackChannels.find(c => c.id === channelId);
+        const channelName = channel ? channel.name : 'unknown';
+
+        if (!channelId) {
+          alert('Please select a Slack channel first.');
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+
+        await callMcpTool('mcp__MCP_SLACK__slack_send_message', {
+          channel_id: channelId,
+          message: message
+        });
+
+        const status = btn.closest('.card').querySelector('.slack-status');
+        status.style.display = 'block';
+        status.textContent = '\u2713 Sent to #' + channelName;
+        status.style.color = 'var(--green)';
+
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = 'Send to Slack';
+          status.style.display = 'none';
+        }, 3000);
+      } catch (err) {
+        debug(`Slack send error: ${err.message}`, 'error');
+        alert('Failed to send: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Send to Slack';
+      }
+    };
+
+    const searchSlackChannels = async (query) => {
+      debug(`Searching Slack channels: "${query}"`);
+      try {
+        const result = await callMcpTool('mcp__MCP_SLACK__slack_search_channels', {
+          query: query,
+          channel_types: 'public_channel,private_channel',
+          limit: 10,
+          response_format: 'concise'
+        });
+
+        const raw = extractText(result);
+        debug(`Slack search raw (first 500): ${raw.slice(0, 500)}`, 'info');
+        let channels = [];
+
+        // The Slack MCP returns markdown-formatted results, not JSON.
+        // Concise format: "1. #channel-name (C0AQQM7PMT9) - public_channel - Creator: ..."
+        // Parse with regex for the concise line format
+        const conciseMatches = [...raw.matchAll(/#([a-z0-9_-]+)\s*\(([A-Z0-9]+)\)\s*-\s*(public_channel|private_channel)/g)];
+        if (conciseMatches.length > 0) {
+          debug(`Parsed ${conciseMatches.length} channels from concise format`, 'success');
+          channels = conciseMatches.map(m => ({
+            id: m[2],
+            name: m[1],
+            type: m[3] === 'private_channel' ? 'private' : 'public'
+          }));
+        }
+
+        // Fallback: detailed format — Name: #channel-name ... Permalink: .../archives/CXXX ... Channel Type: type
+        if (channels.length === 0) {
+          const nameMatches = [...raw.matchAll(/Name:\s*#([a-z0-9_-]+)/g)];
+          const idMatches = [...raw.matchAll(/\/archives\/([A-Z0-9]+)/g)];
+          const typeMatches = [...raw.matchAll(/Channel Type:\s*(public_channel|private_channel)/g)];
+          const count = Math.min(nameMatches.length, idMatches.length);
+          for (let i = 0; i < count; i++) {
+            channels.push({
+              id: idMatches[i][1],
+              name: nameMatches[i][1],
+              type: (typeMatches[i] && typeMatches[i][1] === 'private_channel') ? 'private' : 'public'
+            });
+          }
+          if (channels.length > 0) {
+            debug(`Parsed ${channels.length} channels from detailed format`, 'success');
+          }
+        }
+
+        // Last fallback: try JSON in case response shape changes
+        if (channels.length === 0) {
+          try {
+            const parsed = JSON.parse(raw);
+            const arr = Array.isArray(parsed) ? parsed : parsed.channels || parsed.results || [];
+            channels = arr.map(ch => ({
+              id: ch.id || ch.channel_id || '',
+              name: ch.name || ch.channel_name || '',
+              type: ch.is_private ? 'private' : (ch.type || 'public')
+            })).filter(ch => ch.id && ch.name);
+          } catch {
+            // Not JSON either
+          }
+        }
+
+        debug(`Returning ${channels.length} channels`, channels.length > 0 ? 'success' : 'warn');
+        return channels.filter(ch => ch.id && ch.name);
+      } catch (err) {
+        debug(`Slack channel search error: ${err.message}`, 'error');
+        return [];
+      }
+    };
+
+    const getAssigneeOptions = () => {
+      // Build assignee options: board members first (with ticket count), then meeting attendees
+      const boardMembers = state.boardAssignees.filter(a => a.source === 'board');
+      const meetingAttendees = state.boardAssignees.filter(a => a.source === 'meeting');
+      let html = '<option value="">Unassigned</option>';
+      if (boardMembers.length > 0) {
+        html += '<optgroup label="Board Members">';
+        boardMembers.forEach(a => {
+          html += `<option value="${escapeHtml(a.displayName)}">${escapeHtml(a.displayName)} (${a.ticketCount} tickets)</option>`;
+        });
+        html += '</optgroup>';
+      }
+      if (meetingAttendees.length > 0) {
+        html += '<optgroup label="Meeting Attendees">';
+        meetingAttendees.forEach(a => {
+          html += `<option value="${escapeHtml(a.displayName)}">${escapeHtml(a.displayName)}</option>`;
+        });
+        html += '</optgroup>';
+      }
+      return html;
+    };
+
+    const getChannelSelectorHtml = () => {
+      let options = '';
+      state.slackChannels.forEach(ch => {
+        const selected = state.selectedSlackChannel && state.selectedSlackChannel.id === ch.id ? 'selected' : '';
+        options += `<option value="${escapeHtml(ch.id)}" ${selected}>#${escapeHtml(ch.name)} (${ch.type})</option>`;
+      });
+      return `
+        <div class="channel-selector">
+          <label class="form-label">Send to channel</label>
+          <div class="channel-selector-row">
+            <select class="channel-dropdown">${options}</select>
+            <button type="button" class="button button-secondary button-small add-channel-btn">+ Add Channel</button>
+          </div>
+          <div class="channel-search-container">
+            <div class="channel-search-row">
+              <input type="text" class="channel-search-input" placeholder="Search Slack channels...">
+              <button type="button" class="button button-primary button-small channel-search-btn">Search</button>
+            </div>
+            <div class="channel-results"></div>
+          </div>
+        </div>
+      `;
+    };
+
+    const updateApprovalCount = () => {
+      const count = Object.values(state.approvals).filter(Boolean).length;
+      document.getElementById('approvalCount').textContent = count;
+      const submitBtn = document.getElementById('submitButton');
+      submitBtn.style.display = count > 0 ? 'inline-flex' : 'none';
+    };
+
+    // ============================================
+    // Submit to JIRA
+    // ============================================
+    // Pull the new Jira issue key out of a create_issue response. The Zapier
+    // MCP tends to echo the created key somewhere in its free-text response;
+    // match `PROJECTKEY-NNN` where PROJECTKEY matches the current board, then
+    // fall back to any Jira-shaped key if the project match fails.
+    const extractCreatedIssueKey = (response, projectKey) => {
+      const text = extractText(response);
+      if (!text) return '';
+      if (projectKey) {
+        const scoped = new RegExp(`\\b${projectKey}-\\d+\\b`);
+        const m = text.match(scoped);
+        if (m) return m[0];
+      }
+      const loose = text.match(/\b[A-Z][A-Z0-9]+-\d+\b/);
+      return loose ? loose[0] : '';
+    };
+
+    const submitToJira = async () => {
+      state.submitting = true;
+      document.getElementById('submitButton').disabled = true;
+
+      const progressBar = document.getElementById('progressBar');
+      progressBar.classList.add('show');
+
+      const items = [];
+      const proposals = state.proposals;
+
+      (proposals.ticketUpdates || []).forEach((tu, idx) => {
+        if (state.approvals[`update-${idx}`]) {
+          const comment = document.querySelector(`[data-update-idx="${idx}"].update-comment`)?.value || tu.proposedComment;
+          items.push({ type: 'comment', key: tu.ticketKey, summary: tu.ticketSummary, comment });
+        }
+      });
+
+      (proposals.newTickets || []).forEach((nt, idx) => {
+        if (state.approvals[`new-${idx}`]) {
+          const title = document.querySelector(`[data-new-idx="${idx}"].new-title`)?.value || nt.title;
+          const description = document.querySelector(`[data-new-idx="${idx}"].new-description`)?.value || nt.description;
+          const type = document.querySelector(`[data-new-idx="${idx}"].new-type`)?.value || nt.type;
+          const priority = document.querySelector(`[data-new-idx="${idx}"].new-priority`)?.value || nt.priority;
+          const assignee = document.querySelector(`[data-new-idx="${idx}"].new-assignee`)?.value || nt.assignee || null;
+          const labels = (document.querySelector(`[data-new-idx="${idx}"].new-labels`)?.value || '').split(',').map(l => l.trim()).filter(Boolean);
+          const epicKey = document.querySelector(`[data-new-idx="${idx}"].new-epic`)?.value || nt.epicKey || '';
+          // Resolve the selected display name back to a fuller identifier if
+          // we captured one during the board fetch (accountId > email > name).
+          const assigneeRecord = assignee
+            ? state.boardAssignees.find(a => a.displayName === assignee)
+            : null;
+          items.push({
+            type: 'create', title, description, issueType: type, priority, labels, epicKey,
+            assignee,
+            assigneeAccountId: assigneeRecord ? assigneeRecord.accountId : null,
+            assigneeEmail: assigneeRecord ? assigneeRecord.email : null
+          });
+        }
+      });
+
+      const total = items.length;
+      let completed = 0;
+      const results = { commentsAdded: [], ticketsCreated: [], failures: [] };
+
+      for (const item of items) {
+        try {
+          if (item.type === 'comment') {
+            await callMcpTool('mcp__MCP_ZAPIER__jira_software_cloud_add_comment_to_issue', {
+              issueKey: item.key,
+              comment: item.comment,
+              instructions: `Add a comment to issue ${item.key}`,
+              output_hint: 'confirm success'
+            });
+            results.commentsAdded.push({ key: item.key, summary: item.summary || '' });
+          } else if (item.type === 'create') {
+            // Zapier's create_issue validates the `project` param against a
+            // limited dropdown allowlist when passed a key like "SPLT", but
+            // bypasses that check when passed a numeric project id. Fetch the
+            // id if we don't have it cached, then pass it as the `project`.
+            if (!state.selectedBoard.projectId) {
+              try {
+                const lookup = await callMcpTool('mcp__MCP_ZAPIER__jira_software_cloud_find_project', {
+                  instructions: `Find the Jira project with key ${state.selectedBoard.projectKey}.`,
+                  searchByParameter: 'key',
+                  output_hint: "Return the project's id, key, name."
+                });
+                const lookupText = extractText(lookup);
+                const idMatch = lookupText.match(/"id"\s*:\s*"?(\d+)"?/);
+                if (idMatch) {
+                  state.selectedBoard.projectId = idMatch[1];
+                  // Also update the saved-boards entry so we don't re-fetch.
+                  const saved = state.savedBoards.find(b => b.projectKey === state.selectedBoard.projectKey);
+                  if (saved) saved.projectId = idMatch[1];
+                  persistConfig();
+                }
+              } catch (e) { debug(`Project id lookup failed: ${e.message}`, 'warn'); }
+            }
+
+            const projectIdentifier = state.selectedBoard.projectId || state.selectedBoard.projectKey;
+
+            const lines = [
+              `EXECUTE NOW — actually create this Jira issue, do not preview. Return the new issue key in the response.`,
+              ``,
+              `Project: ${state.selectedBoard.projectName} (id ${state.selectedBoard.projectId || 'unknown'}, key ${state.selectedBoard.projectKey})`,
+              `Issue type: ${item.issueType}`,
+              `Summary: ${item.title}`,
+              `Description: ${item.description || '(no description)'}`,
+              `Priority: ${item.priority}`,
+              `Labels: ${item.labels.length > 0 ? item.labels.join(', ') : '(none)'}`
+            ];
+            if (item.assignee) {
+              // Use the strongest identifier available so Zapier's resolver
+              // hits the right Jira user. Put the identifier as the primary
+              // value and the display name as context.
+              const strongest = item.assigneeAccountId
+                ? `accountId:${item.assigneeAccountId}`
+                : (item.assigneeEmail || item.assignee);
+              lines.push(`Assignee (set the Jira Assignee field to this user): ${strongest}`);
+              if (item.assigneeAccountId || item.assigneeEmail) {
+                lines.push(`Assignee display name for reference: ${item.assignee}`);
+              }
+            }
+            if (item.epicKey) lines.push(`Parent Epic: ${item.epicKey} (set the Epic Link / parent field to this epic key)`);
+
+            const response = await callMcpTool('mcp__MCP_ZAPIER__jira_software_cloud_create_issue', {
+              instructions: lines.join('\n'),
+              output_hint: 'Return the new issue key in the format PROJECT-NUMBER (e.g. SPLT-123)',
+              // Pass the numeric project id as `project` — this bypasses the
+              // Zapier dropdown allowlist that rejects project keys not in
+              // its pre-configured scope. Falls back to the key if we never
+              // got an id (older saved boards).
+              project: projectIdentifier,
+              issuetype: item.issueType
+            });
+
+            // Full response to the debug console — if a ticket doesn't land
+            // in Jira but the call "succeeds", the response here will tell us
+            // whether Zapier returned a preview, an error, or a real create.
+            debug(`create_issue response for "${item.title}": ${String(extractText(response)).slice(0, 800)}`, 'info');
+
+            const newKey = extractCreatedIssueKey(response, state.selectedBoard.projectKey);
+            if (!newKey) {
+              // Couldn't find a key — Zapier likely asked a follow-up instead
+              // of executing (common when the connected Jira account can't
+              // see the target project). Surface a clean message.
+              const rawText = String(extractText(response));
+              let friendlyError;
+              const followUpMatch = rawText.match(/"followUpQuestion"\s*:\s*"([^"]+)"/);
+              if (followUpMatch) {
+                friendlyError = `Zapier didn't execute and asked for clarification instead: ${followUpMatch[1].replace(/\\"/g, '"')}`;
+              } else if (/not available|cannot find|no access/i.test(rawText)) {
+                friendlyError = `Zapier couldn't create this ticket — likely a project/permission mismatch on the Jira connection. Response: ${rawText.slice(0, 260)}`;
+              } else {
+                friendlyError = `Create call returned no Jira key. Raw response: ${rawText.slice(0, 260)}`;
+              }
+              results.failures.push({
+                type: 'create',
+                label: `New ticket: ${item.title}`,
+                error: friendlyError
+              });
+            } else {
+              results.ticketsCreated.push({
+                key: newKey,
+                title: item.title,
+                type: item.issueType,
+                priority: item.priority,
+                assignee: item.assignee,
+                epicKey: item.epicKey
+              });
+            }
+          }
+          completed++;
+          document.getElementById('progressFill').style.width = ((completed / total) * 100) + '%';
+        } catch (err) {
+          debug(`Submit error: ${err.message}`, 'error');
+          results.failures.push({
+            type: item.type,
+            label: item.type === 'comment' ? `Comment on ${item.key}` : `New ticket: ${item.title}`,
+            error: err.message || 'Unknown error'
+          });
+          completed++;
+          document.getElementById('progressFill').style.width = ((completed / total) * 100) + '%';
+        }
+      }
+
+      progressBar.classList.remove('show');
+      state.submitting = false;
+      document.getElementById('submitButton').disabled = false;
+
+      renderRecap(results);
+      showRecap();
+    };
+
+    document.getElementById('submitButton').addEventListener('click', submitToJira);
+
+    // Back link to return to selection screen
+    document.getElementById('backLink').addEventListener('click', () => {
+      showSelection();
+      renderMeetingsList();
+      attachCheckboxListeners();
+    });
+
+    // Toast element (lazy-created) for link-handling feedback.
+    let _linkToastTimer = null;
+    const showLinkToast = (html) => {
+      let toast = document.getElementById('linkToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'linkToast';
+        toast.className = 'link-toast';
+        document.body.appendChild(toast);
+      }
+      toast.innerHTML = html;
+      toast.classList.add('visible');
+      clearTimeout(_linkToastTimer);
+      _linkToastTimer = setTimeout(() => toast.classList.remove('visible'), 4000);
+    };
+
+    const copyToClipboardFallback = async (text) => {
+      // Try the modern async clipboard API first.
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch {}
+      // Fallback to the legacy execCommand path for sandboxed contexts.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '-2000px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch {}
+      return false;
+    };
+
+    // Delegated handler: external link clicks. In a regular browser tab,
+    // window.open opens the URL. In Cowork's native host it's blocked, so we
+    // copy the URL to the clipboard and surface a toast with a visible link —
+    // the user can paste it in their browser or cmd-click the toast URL.
+    document.addEventListener('click', async (e) => {
+      const link = e.target.closest('a[href]');
+      if (!link) return;
+      const wantsExternal = link.hasAttribute('data-external-link') || link.getAttribute('target') === '_blank';
+      if (!wantsExternal) return;
+      const href = link.getAttribute('href');
+      if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+      e.preventDefault();
+
+      // Try window.open — works in real browser tabs.
+      let opened = false;
+      try {
+        const win = window.open(href, '_blank', 'noopener,noreferrer');
+        if (win && !win.closed) opened = true;
+      } catch {}
+
+      // Also post a message to the parent frame in case Cowork ever listens.
+      try { window.parent.postMessage({ type: 'cowork.open-url', url: href }, '*'); } catch {}
+
+      if (opened) return;
+
+      // Cowork/sandbox blocked it — copy the URL to the clipboard and show a
+      // toast. The toast itself has an anchor so the user can try clicking
+      // from inside the toast (sometimes works in hosts where embedded-link
+      // clicks are allowed even when arbitrary <a> navigations aren't).
+      const copied = await copyToClipboardFallback(href);
+      const escaped = escapeHtml(href);
+      if (copied) {
+        showLinkToast(`Link copied to clipboard<br><a href="${escaped}" target="_blank" rel="noopener noreferrer">${escaped}</a>`);
+      } else {
+        showLinkToast(`Open this link in your browser:<br><a href="${escaped}" target="_blank" rel="noopener noreferrer">${escaped}</a>`);
+      }
+    });
+
+    // ============================================
+    // Main Execution
+    // ============================================
+    debug('Starting initial data fetch...');
+    showLoading();
+
+    // Track which board was loaded at startup
+    state._lastFetchedBoardKey = state.selectedBoard ? state.selectedBoard.projectKey : null;
+
+    const [meetings] = await Promise.all([
+      listMeetings('this_week'),
+      fetchJiraBoard(),
+      fetchJiraEpics()
+    ]);
+
+    state.allFetchedMeetings = meetings;
+    debug(`Loaded ${meetings.length} meetings, ${state.jiraIssues.length} JIRA issues`);
+
+    showSelection();
+    renderSelectionScreen();
+
+  } catch (err) {
+    console.error('Fatal Error:', err);
+    document.body.innerHTML = '<div style="color:#dc2626;padding:2em;font-family:system-ui"><strong>Error:</strong> ' + err.message + '<pre style="margin-top:1em;font-size:0.8rem;white-space:pre-wrap">' + err.stack + '</pre></div>';
+  }
+})();
+  </script>
+  <script type="application/json" id="persisted-config">{"savedBoards":[{"projectKey":"SPLT","projectName":"EdPlus: Split Studio","projectId":"37034","baseUrl":"https://asudev.jira.com"}],"savedSlackChannels":[{"id":"C0AQQM7PMT9","name":"ar-test-2","type":"public"}]}</script>
+</body>
+</html>

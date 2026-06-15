@@ -1,0 +1,14 @@
+{
+  "boards": [
+    {
+      "projectKey": "SPLT",
+      "projectName": "EdPlus: Split Studio",
+      "jqlFilter": "project = SPLT AND status != Done AND updated >= -30d",
+      "slackChannel": null,
+      "addedAt": "2026-03-23"
+    }
+  ],
+  "defaults": {
+    "meetingRange": "last_week"
+  }
+}

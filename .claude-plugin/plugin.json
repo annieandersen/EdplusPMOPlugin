@@ -1,0 +1,9 @@
+{
+  "name": "pm-plugin",
+  "version": "2.1.3",
+  "description": "PM productivity plugin for Claude Code. Launches a live Cowork artifact that turns Granola meetings into reviewable JIRA proposals and a Slack summary; builds weekly Slack Canvas update pipelines; walks PMs through an interview to create recurring scheduled agents; routes feedback into a shared Coda hub. Self-bootstraps a user profile (brand voice, JIRA boards, Slack channels) on first run. Four slash commands: /meeting-sync, /pm-feedback, /pm-automations, /canvas-updates-builder.",
+  "author": {
+    "name": "Auryan Ratliff",
+    "email": "apratlif@asu.edu"
+  }
+}

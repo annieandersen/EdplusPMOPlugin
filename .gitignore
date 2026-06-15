@@ -1,0 +1,12 @@
+# OS / editor junk
+.DS_Store
+~$*
+
+# Node
+node_modules/
+
+# Local Claude Code settings (machine-specific permissions)
+.claude/settings.local.json
+
+# Local user config (each user self-bootstraps their own)
+# pm-config.json  # tracked as an example; uncomment to keep it local-only
